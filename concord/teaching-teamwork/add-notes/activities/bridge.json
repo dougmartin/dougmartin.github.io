@@ -1,0 +1,89 @@
+{
+  "name": "Bridge",
+  "externalComponents": [
+    {
+      "type": "battery",
+      "UID": "source",
+      "voltage": 20,
+      "connections": "battery_1,battery_2"
+    },
+    {
+      "type": "wire",
+      "connections": "battery_1,0:off_10",
+      "hidden": true
+    },
+    {
+      "type": "wire",
+      "connections": "battery_2,0:off_9",
+      "hidden": true
+    }
+  ],
+  "clients": [
+    {
+      "show_multimeter": true,
+      "circuit": [   
+        {
+          "type": "wire",
+          "connections": "off_10,left_positive21",
+          "draggable": true
+        }, 
+        {
+          "type": "wire",
+          "connections": "off_9,left_negtive21",
+          "draggable": true
+        },
+        {
+          "type": "wire",
+          "connections": "a12,left_positive5",
+          "draggable": false
+        },
+        {
+          "type": "wire",
+          "connections": "c12,left_negative5",
+          "draggable": false
+        }
+      ]
+    },
+    {
+      "show_multimeter": true,
+      "circuit": [
+        {
+          "type": "wire",
+          "connections": "off_11,a20",
+          "draggable": false
+        },
+        {
+          "type": "resistor",
+          "UID": "r2",
+          "resistance": "100",
+          "connections": "b14,d08",
+          "label": "R2",
+          "draggable": false
+        },
+        {
+          "type": "wire",
+          "connections": "a14,off_1",
+          "draggable": false
+        }
+      ]
+    },
+    {
+      "show_multimeter": true,
+      "circuit": [
+        {
+          "type": "wire",
+          "connections": "off_11,a20",
+          "draggable": false
+        },
+        {
+          "type": "resistor",
+          "UID": "r3",
+          "resistance": "100",
+          "connections": "b17,d23",
+          "label": "R3",
+          "draggable": false
+        }
+      ]
+    }
+  ]
+}

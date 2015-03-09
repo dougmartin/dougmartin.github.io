@@ -1,0 +1,80 @@
+{
+  "name": "Bandpass Filter",  
+  "externalComponents": [
+  {
+    "type": "wire",
+    "connections": "0:off_1,1:off_11",
+    "hidden": true
+  },
+  {
+    "type": "wire",
+    "connections": "0:off_2,1:off_10",
+    "hidden": true
+  }
+  ],
+  "clients": [
+    {
+      "show_oscilloscope": true,
+      "showComponentEditor": true,
+      "showComponentDrawer": true,
+      "circuit": [
+        {
+          "type": "function generator",
+          "UID": "source",
+          "frequencies": [
+            "logarithmic",
+            100,
+            100000,
+            1001
+          ],
+          "amplitude": 16.97,
+          "initialFrequency": 1000,
+          "connections": "left_positive21,left_negative21"
+         },
+        {
+          "type": "wire",
+          "connections": "left_negative4,off_1",
+          "draggable": false
+        },
+       {
+          "type": "resistor",
+          "UID": "r1",
+          "resistance": "10",
+          "connections": "left_positive15,c10",
+          "label": "R1",
+          "draggable": true
+        },
+        {
+          "type": "wire",
+          "connections": "b10,off_2",
+          "draggable": false
+        }
+      ]
+    },
+    {
+      "show_oscilloscope": true,
+      "showComponentEditor": true,
+      "showComponentDrawer": true,
+      "circuit": [
+        {
+          "type": "resistor",
+          "UID": "r2",
+          "resistance": "2000",
+          "connections": "a11,a5",
+          "label": "R2",
+          "draggable": true
+        },
+        {
+          "type": "wire",
+          "connections": "left_negative15,off_11",
+          "draggable": false
+        },
+        {
+          "type": "wire",
+          "connections": "left_positive20,off_10",
+          "draggable": false
+        }
+      ]
+    }
+  ]
+}
