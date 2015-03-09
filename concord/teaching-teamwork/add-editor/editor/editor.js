@@ -8,6 +8,9 @@ App = React.createFactory(React.createClass({
   getInitialState: function () {
     var state = this.getEmptyState();
     state.showDialog = false;
+    this.firebase = new Firebase('https://teaching-teamwork.firebaseio.com/dev/');
+    this.authClient = null;
+    this.remoteUrlWatcher = null;
     return state;
   },
   
@@ -17,7 +20,11 @@ App = React.createFactory(React.createClass({
       dirty: false,
       empty: true,
       text: this.getEmptyDoc(),
-      newed: true
+      newed: true,
+      user: this.state ? this.state.user : null,
+      username: this.state ? this.state.username : null,
+      remoteUrl: null,
+      published: false
     };
   },
   
@@ -44,10 +51,32 @@ App = React.createFactory(React.createClass({
     this.setState(this.getEmptyState());
   },
   
+  getRemoteUrl: function (filename) {
+    return this.state.username && filename ? ('https://teaching-teamwork.firebaseio.com/dev/activities/' + this.state.username + '/' + filename) : null;
+  },
+  
+  componentWillUpdate: function (nextProps, nextState) {
+    var self = this;
+    
+    if (nextState.remoteUrl != this.state.remoteUrl) {
+      if (this.remoteUrlWatcher) {
+        this.remoteUrlWatcher.off();
+        this.remoteUrlWatcher = null;
+      }
+      if (nextState.remoteUrl) {
+        this.remoteUrlWatcher = new Firebase(nextState.remoteUrl);
+        this.remoteUrlWatcher.on("value", function (snapshot) {
+          self.setState({published: !!snapshot.val()});
+        });
+      }
+    }
+  },
+  
   openFile: function (filename) {
     var text = localStorage.getItem(storagePrefix + filename);
     this.setState({
       filename: filename,
+      remoteUrl: this.getRemoteUrl(filename),
       text: text,
       dirty: false,
       empty: text.length == 0,
@@ -58,7 +87,11 @@ App = React.createFactory(React.createClass({
   
   saveFile: function (filename) {
     localStorage.setItem(storagePrefix + filename, this.state.text);
-    this.setState({filename: filename, dirty: false});
+    this.setState({
+      filename: filename, 
+      dirty: false,
+      remoteUrl: this.getRemoteUrl(filename)
+    });
     this.hideDialog();
   },
   
@@ -67,8 +100,69 @@ App = React.createFactory(React.createClass({
     this.newFile();
   },
   
-  useFile: function () {
-    window.open('../#local:' + this.state.filename);
+  useFile: function (isLocal) {
+    var prefix = isLocal ? 'local:' : ('remote:' + this.state.username + '/');
+    window.open('../#' + prefix + this.state.filename);
+  },
+  
+  formatText: function () {
+    try {
+      this.setState({text: JSON.stringify(JSON.parse(this.state.text), null, 2)});
+    }
+    catch (e) {
+      alert('Unable to format invalid JSON!');
+    }
+  },
+  
+  isValidText: function (message) {
+    try {
+      JSON.parse(this.state.text);
+      return true;
+    }
+    catch (e) {
+      alert(message || 'The JSON is NOT valid');
+      return false;
+    }
+  },
+  
+  getAuthClient: function () {
+    var self = this;
+    this.authClient = this.authClient || new FirebaseSimpleLogin(this.firebase, function(error, user) {
+      var atPos = user && user.email ? user.email.indexOf('@') : 0,
+          username = atPos ? user.email.substr(0, atPos) : null;
+      if (error) {
+        alert(error);
+      }
+      self.setState({
+        user: user, 
+        username: username,
+        remoteUrl: self.getRemoteUrl(self.state.filename)
+      });
+    });
+    return this.authClient;
+  },
+  
+  login: function () {
+    var email = prompt('Email?'),
+        password = email ? prompt('Password?') : null;
+        
+    if (email && password) {
+      this.getAuthClient().login("password", {
+        email: email,
+        password: password
+      });
+    }
+  },
+  
+  logout: function () {
+    if (confirm('Are you sure you want to logout?')) {
+      this.getAuthClient().logout();
+      this.setState({user: null});
+    }
+  },
+  
+  publishFile: function () {
+    this.firebase.child('activities').child(this.state.username).child(this.state.filename).set(JSON.parse(this.state.text));
   },
   
   handleToolbar: function (button) {
@@ -89,24 +183,48 @@ App = React.createFactory(React.createClass({
         }
         break;
       case 'Save':
-        if (this.state.filename) {
-          this.saveFile(this.state.filename);
-        }
-        else {
-          showDialog();
+        if (this.isValidText('Sorry, you must fix the JSON errors before you can save.')) {
+          if (this.state.filename) {
+            this.saveFile(this.state.filename);
+          }
+          else {
+            showDialog();
+          }
         }
         break;
       case 'Save As':
-        showDialog();
+        if (this.isValidText('Sorry, you must fix the JSON errors before you can save.')) {
+          showDialog();
+        }
         break;
-      case 'Use':
+      case 'Use Local':
+      case 'Use Remote':
         if (this.okIfDirty()) {
-          this.useFile();
+          this.useFile(button == 'Use Local');
         }
         break;
       case 'Delete':
         if (confirm('Are you sure you want to delete this?')) {
           this.deleteFile();
+        }
+        break;
+      case 'Format':
+        this.formatText();
+        break;
+      case 'Validate':
+        if (this.isValidText()) {
+          alert('The JSON is valid');
+        }
+        break;
+      case 'Login':
+        this.login();
+        break;
+      case 'Logout':
+        this.logout();
+        break;
+      case 'Publish':
+        if (this.isValidText('Sorry, you must fix the JSON errors before you can publish.') && this.okIfDirty()) {
+          this.publishFile();
         }
         break;
     }
@@ -127,13 +245,18 @@ App = React.createFactory(React.createClass({
     return div({className: 'app'}, 
       Header({
         filename: this.state.filename, 
-        dirty: this.state.dirty
+        dirty: this.state.dirty,
+        user: this.state.user,
+        username: this.state.username,
+        published: this.state.published
       }),
       Toolbar({
         filename: this.state.filename, 
         dirty: this.state.dirty, 
         empty: this.state.empty,
-        onButtonPressed: this.handleToolbar
+        user: this.state.user,
+        onButtonPressed: this.handleToolbar,
+        published: this.state.published
       }),
       Editor({
         changed: this.editorChanged,
@@ -157,7 +280,10 @@ Header = React.createFactory(React.createClass({
     return div({className: 'header'},
       'Teaching Teamwork Activity Editor - ',
       span({}, this.props.filename || italics({}, 'New Activity')),
-      alert('warning', this.props.dirty, 'UNSAVED')
+      alert('warning', this.props.dirty, 'UNSAVED'),
+      alert('info', this.props.published && !this.props.dirty, 'PUBLISHED'),
+      alert('warning', this.props.published && this.props.dirty, 'CHANGES NOT PUBLISHED'),
+      div({style: {float: 'right'}}, this.props.user ? (this.props.user.email + ' (' + this.props.username + ')') : null)
     );
   }
 }));
@@ -183,7 +309,12 @@ Toolbar = React.createFactory(React.createClass({
       span({}, 'Open'),
       span(dirtyProps, 'Save'),
       span(dirtyProps, 'Save As'),
-      span(filenameProps, 'Use'),
+      span(emptyProps, 'Format'),
+      span(emptyProps, 'Validate'),
+      span(filenameProps, 'Use Local'),
+      this.props.user ? span(filenameProps, 'Publish') : null,
+      this.props.user ? span(this.props.published ? {} : disabledProps, 'Use Remote') : null,
+      span({}, this.props.user ? 'Logout' : 'Login'),
       span({className: this.props.filename === null ? 'disabled' : null, style: {'float': 'right'}}, 'Delete')
     );
   }

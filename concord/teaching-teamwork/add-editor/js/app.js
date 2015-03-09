@@ -45,6 +45,7 @@ function parseActivity(activityName, rawData) {
 
 function loadActivity(activityName) {
   var localPrefix = 'local:',
+      remotePrefix = 'remote:',
       rawData, data, activityUrl, request;
   
   if (activityName.substr(0, localPrefix.length) == localPrefix) {
@@ -54,6 +55,31 @@ function loadActivity(activityName) {
     }
     else {
       alert("Could not find LOCAL activity at " + activityName);
+    }
+  }
+  else if (activityName.substr(0, remotePrefix.length) == remotePrefix) {
+    var remoteName = activityName.substr(remotePrefix.length),
+        slashPos = remoteName.indexOf('/'),
+        username = slashPos ? remoteName.substr(0, slashPos) : null,
+        filename = slashPos ? remoteName.substr(slashPos + 1) : null,
+        url = username && filename ? ('https://teaching-teamwork.firebaseio.com/dev/activities/' + username + '/' + filename) : null;
+        firebase = url ? new Firebase(url) : null;
+    
+    if (firebase) {
+      firebase.once('value', function (snapshot) {
+        var jsonData = snapshot.val();
+        if (jsonData) {
+          startActivity(activityName, jsonData);
+        }
+        else {
+          alert("No data found for REMOTE activity at " + url);
+        }
+      }, function (error) {
+        alert("Could not find REMOTE activity at " + url);
+      });
+    }
+    else {
+      alert("Invalidate remote name, must be in the form <username>/<filename>");
     }
   }
   else {

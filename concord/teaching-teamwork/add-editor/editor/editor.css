@@ -31,7 +31,7 @@ html, body {
   background-color: #700;
 }
 .header .alert-info {
-  background-color: #0f0;
+  background-color: #070;
 }
 
 .toolbar {
@@ -56,6 +56,9 @@ html, body {
   color: #000;
   background-color: #eee;
   cursor: not-allowed;
+}
+.toolbar span.right {
+  float: right;
 }
 .editor {
   position: absolute;
@@ -107,6 +110,8 @@ html, body {
   right: 10px;
   bottom: 50px;
   background-color: #f7f7f7;
+  overflow: auto;
+  padding: 10px 0 10px 10px;
 }
 .dialog .inner .filelist .filelistitem {
   cursor: pointer;
@@ -119,7 +124,6 @@ html, body {
   bottom: 10px;
   height: 25px;
   width: 485px;
-  overflow: auto;
   font-size: 14px;
 }
 .dialog .inner .button {
