@@ -997,7 +997,9 @@ module.exports = PageView = React.createClass({displayName: "PageView",
     var title,
         activity = this.props.activity ? this.props.activity : {},
         image = null,
-        chat = null;
+        chat = null,
+        src;
+        
     if (activity.name) {
       title = React.createElement("h1", null, "Teaching Teamwork: ",  activity.name)
     } else {
@@ -1005,7 +1007,8 @@ module.exports = PageView = React.createClass({displayName: "PageView",
     }
 
     if (activity.image) {
-      image = React.createElement("img", {src:  config.modelsBase + activity.image})
+      src = /^https?:\/\//.test(activity.image) ? activity.image : config.modelsBase + activity.image;
+      image = React.createElement("img", {src: src })
     }
 
     if (activity.clients && activity.clients.length > 1) {

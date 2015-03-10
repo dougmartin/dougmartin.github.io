@@ -24,6 +24,7 @@ App = React.createFactory(React.createClass({
       user: this.state ? this.state.user : null,
       username: this.state ? this.state.username : null,
       remoteUrl: null,
+      remoteUsername: null,
       published: false
     };
   },
@@ -72,17 +73,53 @@ App = React.createFactory(React.createClass({
     }
   },
   
-  openFile: function (filename) {
-    var text = localStorage.getItem(storagePrefix + filename);
-    this.setState({
-      filename: filename,
-      remoteUrl: this.getRemoteUrl(filename),
-      text: text,
-      dirty: false,
-      empty: text.length == 0,
-      opened: true
-    });
-    this.hideDialog();
+  openFile: function (localOrRemoteFilename) {
+    var self = this,
+        slashPos = localOrRemoteFilename.indexOf('/'),
+        username = slashPos ? localOrRemoteFilename.substr(0, slashPos) : null,
+        filename = slashPos ? localOrRemoteFilename.substr(slashPos + 1) : null,
+        url = username && filename ? ('https://teaching-teamwork.firebaseio.com/dev/activities/' + username + '/' + filename) : null,
+        firebase = url ? new Firebase(url) : null,
+        text = !firebase ? localStorage.getItem(storagePrefix + localOrRemoteFilename) : null;
+        
+    if (text) {
+      this.setState({
+        filename: localOrRemoteFilename,
+        remoteUrl: this.getRemoteUrl(localOrRemoteFilename),
+        remoteUsername: null,
+        text: text,
+        dirty: false,
+        empty: text.length == 0,
+        opened: true
+      });
+      this.hideDialog();
+    }
+    else if (firebase) {
+      firebase.once('value', function (snapshot) {
+        var jsonData = snapshot.val();
+        if (jsonData) {
+          text = JSON.stringify(jsonData, null, 2);
+          self.setState({
+            filename: filename,
+            remoteUrl: self.getRemoteUrl(filename),
+            remoteUsername: username,
+            text: text,
+            dirty: false,
+            empty: text.length == 0,
+            opened: true
+          });
+          self.hideDialog();          
+        }
+        else {
+          alert("No data found for REMOTE activity at " + url);
+        }
+      }, function (error) {
+        alert("Could not find REMOTE activity at " + url);
+      });      
+    }
+    else {
+      alert('Unable to open ' + filename);
+    }
   },
   
   saveFile: function (filename) {
@@ -163,6 +200,12 @@ App = React.createFactory(React.createClass({
   
   publishFile: function () {
     this.firebase.child('activities').child(this.state.username).child(this.state.filename).set(JSON.parse(this.state.text));
+  },
+  
+  getPublishedFiles: function (callback) {
+    this.firebase.child('activities').once('value', function (snapshot) {
+      callback(snapshot ? snapshot.val() : null);
+    });
   },
   
   handleToolbar: function (button) {
@@ -248,6 +291,7 @@ App = React.createFactory(React.createClass({
         dirty: this.state.dirty,
         user: this.state.user,
         username: this.state.username,
+        remoteUsername: this.state.remoteUsername,
         published: this.state.published
       }),
       Toolbar({
@@ -266,7 +310,8 @@ App = React.createFactory(React.createClass({
         show: this.state.showDialog,
         hideDialog: this.hideDialog,
         openFile: this.openFile,
-        saveFile: this.saveFile
+        saveFile: this.saveFile,
+        getPublishedFiles: this.getPublishedFiles
       })
     );
   }
@@ -280,6 +325,7 @@ Header = React.createFactory(React.createClass({
     return div({className: 'header'},
       'Teaching Teamwork Activity Editor - ',
       span({}, this.props.filename || italics({}, 'New Activity')),
+      this.props.remoteUsername ? italics({}, ' (via ', this.props.remoteUsername, ')') : null,
       alert('warning', this.props.dirty, 'UNSAVED'),
       alert('info', this.props.published && !this.props.dirty, 'PUBLISHED'),
       alert('warning', this.props.published && this.props.dirty, 'CHANGES NOT PUBLISHED'),
@@ -360,22 +406,55 @@ Editor = React.createFactory(React.createClass({
   }
 }));
 
+FileListItem = React.createFactory(React.createClass({
+  clicked: function (e) {    
+    e.preventDefault();
+    e.stopPropagation();
+    this.props.clicked(this.props.file);
+  },
+  
+  render: function () {
+    return div({className: 'filelistitem', onClick: this.clicked}, this.props.file);
+  }
+}));
+
 Dialog = React.createFactory(React.createClass({
   getInitialState: function () {
     this.lastFileClick = null;
-    return {files: []};
+    return {
+      localFiles: [],
+      remoteFiles: []
+    };
   },
   
   findFiles: function () {
-    var files = [],
+    var self = this,
+        localFiles = [],
+        remoteFiles = [],
         i, len, key;
     for (i = 0, len = localStorage.length; i < len; ++i ) {
       key = localStorage.key(i);
       if (key.substr(0, storagePrefix.length) == storagePrefix) {
-        files.push(key.substr(storagePrefix.length));
+        localFiles.push(key.substr(storagePrefix.length));
       }
     }
-    this.setState({files: files});
+    this.setState({
+      localFiles: localFiles,
+      remoteFiles: []
+    });
+    
+    this.props.getPublishedFiles(function (publishedFiles) {
+      if (publishedFiles) {
+        for (var username in publishedFiles) {
+          if (publishedFiles.hasOwnProperty(username)) {
+            for (var filename in publishedFiles[username]) {
+              remoteFiles.push(username + '/' + filename);
+            }
+          }
+        }
+        self.setState({remoteFiles: remoteFiles});
+      }
+    });
   },
   
   componentWillReceiveProps: function (nextProps) {
@@ -410,12 +489,8 @@ Dialog = React.createFactory(React.createClass({
     }
   },
   
-  fileClicked: function (e) {
-    if (e.target.className != 'filelistitem') {
-      return;
-    }
-    this.refs.fileinput.getDOMNode().value = e.target.innerHTML;
-    e.preventDefault();
+  fileClicked: function (filename) {
+    this.refs.fileinput.getDOMNode().value = filename;
     var now = (new Date()).getTime();
     if (now - this.lastFileClick < 250) {
       this.buttonClicked();
@@ -424,10 +499,16 @@ Dialog = React.createFactory(React.createClass({
   },
   
   render: function () {
-    var files = [],
+    var files = [div({className: 'fileheader'}, 'Local Files')],
         i, len;
-    for (i = 0, len = this.state.files.length; i < len; i++) {
-      files.push(div({className: 'filelistitem', key: this.state.files[i]}, this.state.files[i]));
+    for (i = 0, len = this.state.localFiles.length; i < len; i++) {
+      files.push(FileListItem({file: this.state.localFiles[i], key: this.state.localFiles[i], clicked: this.fileClicked}));
+    }
+    if ((this.props.show == 'Open') && (this.state.remoteFiles.length > 0)) {
+      files.push(div({className: 'fileheader', style: {marginTop: 10}}, 'Remote Files'));
+      for (i = 0, len = this.state.remoteFiles.length; i < len; i++) {
+        files.push(FileListItem({file: this.state.remoteFiles[i], key: this.state.remoteFiles[i], clicked: this.fileClicked}));
+      }
     }
     
     return div({className: 'dialog', style: {'display': this.props.show ? 'block' : 'none'}}, 

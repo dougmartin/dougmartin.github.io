@@ -113,6 +113,10 @@ html, body {
   overflow: auto;
   padding: 10px 0 10px 10px;
 }
+.dialog .inner .filelist .fileheader {
+  font-size: 14px;
+  font-weight: bold;
+}
 .dialog .inner .filelist .filelistitem {
   cursor: pointer;
   margin: 5px;
