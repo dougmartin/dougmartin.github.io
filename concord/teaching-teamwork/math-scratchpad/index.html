@@ -162,25 +162,25 @@
             sqrt2: "Square root of 2, approximately 1.414."
           };
           this.functions = {
-            abs: "abs(x): Returns the absolute value of a number.",
-            acos: "acos(x): Returns the arccosine of a number.",
-            asin: "asin(x): Returns the arcsine of a number.",
-            atan: "atan(x): Returns the arctangent of a number.",
-            atan2: "atan2(x): Returns the arctangent of the quotient of its arguments.",
-            ceil: "ceil(x): Returns the smallest integer greater than or equal to a number.",
-            cos: "cos(x): Returns the cosine of a number.",
-            exp: "exp(x): Returns Ex, where x is the argument, and E is Euler's constant (2.718…), the base of the natural logarithm.",
-            floor: "floor(x): Returns the largest integer less than or equal to a number.",
-            log: "log(x): Returns the natural logarithm (loge, also ln) of a number.",
-            max: "max(x,y,...): Returns the largest of zero or more numbers.",
-            min: "min(x,y,...): Returns the smallest of zero or more numbers.",
-            pow: "pow(x,y): Returns base to the exponent power, that is, baseexponent.",
-            random: "random(): Returns a pseudo-random number between 0 and 1.",
-            round: "round(x): Returns the value of a number rounded to the nearest integer.",
-            sin: "sin(x): Returns the sine of a number.",
-            sqrt: "sqrt(x): Returns the positive square root of a number.",
-            tan: "tan(x): Returns the tangent of a number.",
-            trunc: "trunc(x): Returns the integral part of the number x, removing any fractional digits."
+            abs: "abs(x) returns the absolute value of a number.",
+            acos: "acos(x) returns the arccosine of a number.",
+            asin: "asin(x) returns the arcsine of a number.",
+            atan: "atan(x) returns the arctangent of a number.",
+            atan2: "atan2(x) returns the arctangent of the quotient of its arguments.",
+            ceil: "ceil(x) returns the smallest integer greater than or equal to a number.",
+            cos: "cos(x) returns the cosine of a number.",
+            exp: "exp(x) returns Ex, where x is the argument, and E is Euler's constant (2.718…), the base of the natural logarithm.",
+            floor: "floor(x) returns the largest integer less than or equal to a number.",
+            log: "log(x) returns the natural logarithm (loge, also ln) of a number.",
+            max: "max(x,y,...) returns the largest of zero or more numbers.",
+            min: "min(x,y,...) returns the smallest of zero or more numbers.",
+            pow: "pow(x,y) returns base to the exponent power, that is, baseexponent.",
+            random: "random() returns a pseudo-random number between 0 and 1.",
+            round: "round(x) returns the value of a number rounded to the nearest integer.",
+            sin: "sin(x) returns the sine of a number.",
+            sqrt: "sqrt(x) returns the positive square root of a number.",
+            tan: "tan(x) returns the tangent of a number.",
+            trunc: "trunc(x) returns the integral part of the number x, removing any fractional digits."
           };
           
           this.evalContext = {};
@@ -204,6 +204,7 @@
             rows.push(tr({key: key}, td({}, italics({}, key)), td({}, this.functions[key])));
           };
           this.helpText.push(div({className: 'header', key: 'functions'}, 'Functions'));
+          this.helpText.push(div({key: 'trignote'}, italics({}, "Note that the trigonometric functions (sin(), cos(), tan(), asin(), acos(), atan(), atan2()) expect or return angles in radians. To convert radians to degrees, divide by (Math.PI / 180), and multiply by this to convert the other way.")));
           this.helpText.push(table({key: 'functionsTable'}, tbody({}, rows)));
           
           return {
