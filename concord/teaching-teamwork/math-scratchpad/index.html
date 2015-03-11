@@ -1,0 +1,361 @@
+<html>
+  <head>
+    <meta charset="utf8">
+    <title>Scratchpad Tester</title>
+    
+    <script src="http://fb.me/react-with-addons-0.12.2.js"></script>
+    
+    <style>
+      body {
+        font: 14px Arial, Helvetica, sans-serif;
+      }
+      
+      .scratchpad-open {
+        position: absolute;
+        top: 50px;
+        left: 50px;
+        width: 400px;
+        border: 1px solid #777;
+        background-color: #ddd;
+      }
+      
+      .scratchpad {
+        font: 14px Arial, Helvetica, sans-serif;
+      }
+      
+      .scratchpad .title {
+        background-color: #007;
+        color: #fff;
+        padding: 5px;
+      }
+      
+      .scratchpad .tabs {
+        margin: 10px;
+      }
+      .scratchpad .tabs .tab {
+        float: left;
+        padding: 5px;
+        margin-right: 5px;
+        cursor: pointer;
+        -webkit-border-top-left-radius: 5px;
+        -webkit-border-top-right-radius: 5px;
+        -moz-border-radius-topleft: 5px;
+        -moz-border-radius-topright: 5px;
+        border-top-left-radius: 5px;
+        border-top-right-radius: 5px;     
+        font-size: 12px;
+      }
+      .scratchpad .tabs .active {
+        background-color: #fff;
+      }
+      .scratchpad .tabs .inactive {
+        background-color: #eee;
+      }
+      
+      .scratchpad .history,
+      .scratchpad .help
+      {
+        clear: both;
+        background-color: #fff;
+        color: #000;
+        padding: 10px;
+        margin: 10px;
+        height: 250px;
+        overflow: auto;
+        font-size: 12px;
+      }
+      
+      .scratchpad .help .intro {
+        margin-top: -10px;
+      }
+      .scratchpad .help p {
+        margin: 10px 0;
+      }
+      .scratchpad .help .header {
+        font-weight: bold;
+        margin: 5px 0;
+      }
+      
+      .scratchpad .help td {
+        font-size: 12px;
+        vertical-align: top;
+        padding: 3px 0;
+      }
+      
+      .scratchpad .history .history-item {
+        clear: both;
+        margin-bottom: 5px;
+      }
+      
+      .scratchpad .history .bubble {
+        padding: 5px 10px;
+        -webkit-border-radius: 5px;
+        -moz-border-radius: 5px;
+        border-radius: 5px;      
+        cursor: pointer;
+      }
+      .scratchpad .history .history-input {
+        float: left;
+        background-color: #86c6ff;
+      }
+      .scratchpad .history .history-output {
+        clear: both;
+        float: right;
+        background-color: #37edc1;
+      }
+      
+      .scratchpad .input {
+        margin: 10px;
+      }
+      .scratchpad .input input {
+        width: 100%;
+        padding: 5px;
+      }
+      
+      .scratchpad .output {
+        margin: 10px;
+      }
+      .scratchpad .output-error {
+        color: #f00;
+      }
+    </style>
+    
+  </head>
+  <body>
+    <div id="content"></div>
+    
+    <p>
+      <b>NOTE</b>: In the real version this would popup after a button was clicked and would also be draggable around the page.
+    </p>
+    
+    <script>
+      var div = React.DOM.div,
+          p = React.DOM.p,
+          table = React.DOM.table,
+          tbody = React.DOM.tbody,  
+          tr = React.DOM.tr,  
+          td = React.DOM.td,  
+          italics = React.DOM.i,  
+          ScratchPad,
+
+      ScratchPad = React.createFactory(React.createClass({
+        displayName: 'ScratchPad',
+        
+        getInitialState: function () {
+          var rows;
+          
+          try {
+            eval('(');
+          }
+          catch (e) {
+            this.badInputMessage = e.message;
+          }
+          
+          this.constants = {
+            e: "Euler's constant and the base of natural logarithms, approximately 2.718.",
+            ln2: "Natural logarithm of 2, approximately 0.693.",
+            ln10: "Natural logarithm of 10, approximately 2.303.",
+            log2e: "Base 2 logarithm of E, approximately 1.443.",
+            log10e: "Base 10 logarithm of E, approximately 0.434.",
+            pi: "Ratio of the circumference of a circle to its diameter, approximately 3.14159.",
+            sqrt1_2: "Square root of 1/2; equivalently, 1 over the square root of 2, approximately 0.707.",
+            sqrt2: "Square root of 2, approximately 1.414."
+          };
+          this.functions = {
+            abs: "abs(x): Returns the absolute value of a number.",
+            acos: "acos(x): Returns the arccosine of a number.",
+            asin: "asin(x): Returns the arcsine of a number.",
+            atan: "atan(x): Returns the arctangent of a number.",
+            atan2: "atan2(x): Returns the arctangent of the quotient of its arguments.",
+            ceil: "ceil(x): Returns the smallest integer greater than or equal to a number.",
+            cos: "cos(x): Returns the cosine of a number.",
+            exp: "exp(x): Returns Ex, where x is the argument, and E is Euler's constant (2.718…), the base of the natural logarithm.",
+            floor: "floor(x): Returns the largest integer less than or equal to a number.",
+            log: "log(x): Returns the natural logarithm (loge, also ln) of a number.",
+            max: "max(x,y,...): Returns the largest of zero or more numbers.",
+            min: "min(x,y,...): Returns the smallest of zero or more numbers.",
+            pow: "pow(x,y): Returns base to the exponent power, that is, baseexponent.",
+            random: "random(): Returns a pseudo-random number between 0 and 1.",
+            round: "round(x): Returns the value of a number rounded to the nearest integer.",
+            sin: "sin(x): Returns the sine of a number.",
+            sqrt: "sqrt(x): Returns the positive square root of a number.",
+            tan: "tan(x): Returns the tangent of a number.",
+            trunc: "trunc(x): Returns the integral part of the number x, removing any fractional digits."
+          };
+          
+          this.evalContext = {};
+          this.helpText = [
+            div({className: 'intro', key: 'intro'}, 
+              p({}, 'Enter an math expression and it will be solved as you type it.  To save it in the history hit the "Enter" key'),
+              p({}, 'You can enter either calculations like this: "1 + 1" or formulas like this: "sin(e)/cos(1) + 1".  A list of constants and functions are shown below.')
+            )
+          ];
+          rows = [];
+          for (var key in this.constants) {
+            this.evalContext[key] = Math[key.toUpperCase()];
+            rows.push(tr({key: key}, td({}, italics({}, key)), td({}, this.constants[key])));
+          };
+          this.helpText.push(div({className: 'header', key: 'constants'}, 'Constants'));
+          this.helpText.push(table({key: 'contantsTable'}, tbody({}, rows)));
+          
+          rows = [];
+          for (var key in this.functions) {
+            this.evalContext[key] = Math[key];
+            rows.push(tr({key: key}, td({}, italics({}, key)), td({}, this.functions[key])));
+          };
+          this.helpText.push(div({className: 'header', key: 'functions'}, 'Functions'));
+          this.helpText.push(table({key: 'functionsTable'}, tbody({}, rows)));
+          
+          return {
+            open: true,
+            output: null,
+            history: [],
+            showHelp: true
+          };
+        },
+        
+        componentDidMount: function () {
+          this.focus();
+        },
+        
+        evalute: function (input) {
+          var output,
+              error = function (isError, text) {
+                return {error: isError, text: text};
+              };
+          if (input.length == 0) {
+            return null;
+          }
+          try {
+            with (this.evalContext) {
+              output = eval(input);
+            }
+            if (typeof output != 'number') {
+              return error(true, this.badInputMessage);
+            }
+            return error(false, output)
+          }
+          catch (e) {
+            return error(true, e.message);
+          }
+        },
+        
+        getInput: function () {
+          return this.refs.input.getDOMNode();
+        },
+        
+        focus: function (clear) {
+          var input = this.getInput();
+          if (clear) {
+            input.value = '';
+          }
+          input.focus();
+        },
+        
+        keyup: function (e) {
+          var input = this.getInput().value.replace(/^\s+|\s+$/, ''),
+              output = this.evalute(input);
+              
+          if ((e.keyCode == 13) && (input.length > 0)) {
+            var history = this.state.history.slice(0);
+            history.push({
+              input: input,
+              output: output,
+            });
+            this.setState({
+              output: null,
+              history: history,
+              showHelp: false
+            });
+            this.focus(true);
+          }
+          else {
+            this.setState({output: output});
+          }
+        },
+        
+        helpTabClicked: function () {
+          this.setState({showHelp: true});
+          this.focus();
+        },
+        
+        historyTabClicked: function () {
+          this.setState({showHelp: false});
+          this.focus();
+        },
+        
+        historyItemClicked: function (text) {
+          this.getInput().value = text;
+          this.focus();
+        },
+        
+        render: function () {
+          var help, history, historyItems, i, output, outputClass;
+          
+          if (this.state.showHelp) {
+            help = div({className: 'help'}, this.helpText);
+          }
+          else {
+            if (this.state.history.length > 0) {
+              historyItems = [];
+              for (i = 0; i < this.state.history.length; i++) {
+                historyItems.push(HistoryItem({item: this.state.history[i], key: i, itemClicked: this.historyItemClicked}));
+              }
+            }
+            else {
+              historyItems = 'Press enter after entering an expression below to move it to the history...';
+            }
+            history = div({className: 'history'}, historyItems);
+          }
+          
+          outputClass = 'output';
+          if (this.state.output !== null) {
+            if (this.state.output.error) {
+              outputClass += ' output-error';
+              output = this.state.output.text;
+            }
+            else {
+              output = 'Result: ' + this.state.output.text;
+            }
+          }
+          else {
+            output = 'Please enter an expression above ⤴';
+          }
+          
+          if (this.state.open) {
+            return div({className: 'scratchpad scratchpad-open'}, 
+              div({className: 'title'}, 'Scratchpad'),
+              div({className: 'tabs'},
+                div({onClick: this.helpTabClicked, className: 'tab ' + (this.state.showHelp ? 'active' : 'inactive')}, 'Help'),
+                div({onClick: this.historyTabClicked, className: 'tab ' + (!this.state.showHelp ? 'active' : 'inactive')}, 'History' + (this.state.history.length > 0 ? ' (' + this.state.history.length + ')' : ''))
+              ),
+              this.state.showHelp ? help : history,
+              div({className: 'input'}, 
+                React.DOM.input({ref: 'input', onKeyUp: this.keyup})
+              ),
+              div({className: outputClass}, output)
+            );
+          }
+        }
+      }));
+      
+      HistoryItem = React.createFactory(React.createClass({
+        displayName: 'HistoryItem',
+        
+        itemClicked: function (e) {
+          this.props.itemClicked(e.target.innerHTML);
+        },
+        
+        render: function () {
+          return div({className: 'history-item'},
+            div({className: 'bubble history-input', onClick: this.itemClicked}, this.props.item.input),
+            div({className: 'bubble history-output', onClick: this.itemClicked}, this.props.item.output.text)
+          );
+        }
+      }));
+      
+      React.render(ScratchPad({}), document.getElementById('content'));
+      
+    </script>
+  </body>
+</html>
