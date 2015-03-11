@@ -1,0 +1,54 @@
+{
+  "name": "Single circuit board with external battery",
+  "externalComponents": [
+    {
+      "type": "battery",
+      "UID": "source",
+      "voltage": 12.5,
+      "connections": "battery_1,battery_2"
+    },
+    {
+      "type": "wire",
+      "connections": "battery_1,0:off_10",
+      "hidden": true
+    },
+    {
+      "type": "wire",
+      "connections": "battery_2,0:off_11",
+      "hidden": true
+    }
+  ],
+  "clients": [
+    {
+      "show_multimeter": true,
+      "showComponentEditor": true,
+      "showComponentDrawer": true,
+      "circuit": [   
+        {
+          "type": "wire",
+          "connections": "off_11,left_positive21",
+          "draggable": true
+        }, 
+        {
+          "type": "wire",
+          "connections": "off_10,left_negative21",
+          "draggable": true
+        },
+        {
+          "type": "wire",
+          "connections": "a15,left_positive5",
+          "draggable": false
+        },
+        {
+          "type": "resistor",
+          "UID": "r1",
+          "label": "R1",
+          "resistance": "100",
+          "connections": "c15,c27",
+          "hidden": false,
+          "draggable": true
+        }
+      ]
+    }
+  ]
+}

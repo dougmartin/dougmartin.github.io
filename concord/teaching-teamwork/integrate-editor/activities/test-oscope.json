@@ -1,0 +1,32 @@
+{
+  "name": "test",  
+  "clients": [
+    {
+      "show_oscilloscope": true,
+      "showComponentEditor": true,
+      "showComponentDrawer": true,
+      "circuit": [
+        {
+          "type": "function generator",
+          "UID": "source",
+          "frequencies": [
+            "logarithmic",
+            100,
+            100000,
+            1001
+          ],
+          "amplitude": 16.97,
+          "initialFrequency": 1000,
+          "connections": "left_positive21,left_negative21"
+        },
+      ]
+    },
+    {
+      "show_oscilloscope": true,
+      "showComponentEditor": true,
+      "showComponentDrawer": true,
+      "circuit": [
+      ]
+    }
+  ]
+}
