@@ -137,6 +137,7 @@
           td = React.DOM.td,  
           italics = React.DOM.i,  
           ScratchPad,
+          HistoryItem;
 
       ScratchPad = React.createFactory(React.createClass({
         displayName: 'ScratchPad',
@@ -186,10 +187,11 @@
           this.evalContext = {};
           this.helpText = [
             div({className: 'intro', key: 'intro'}, 
-              p({}, 'Enter an math expression and it will be solved as you type it.  To save it in the history hit the "Enter" key'),
+              p({}, 'Enter an math expression and it will be solved as you type it.  To save it in the history hit the "Enter" key.  To recall an item from this history just click on it.'),
               p({}, 'You can enter either calculations like this: "1 + 1" or formulas like this: "sin(e)/cos(1) + 1".  A list of constants and functions are shown below.')
             )
           ];
+          
           rows = [];
           for (var key in this.constants) {
             this.evalContext[key] = Math[key.toUpperCase()];
@@ -203,6 +205,7 @@
             this.evalContext[key] = Math[key];
             rows.push(tr({key: key}, td({}, italics({}, key)), td({}, this.functions[key])));
           };
+          
           this.helpText.push(div({className: 'header', key: 'functions'}, 'Functions'));
           this.helpText.push(div({key: 'trignote'}, italics({}, "Note that the trigonometric functions (sin(), cos(), tan(), asin(), acos(), atan(), atan2()) expect or return angles in radians. To convert radians to degrees, divide by (Math.PI / 180), and multiply by this to convert the other way.")));
           this.helpText.push(table({key: 'functionsTable'}, tbody({}, rows)));
