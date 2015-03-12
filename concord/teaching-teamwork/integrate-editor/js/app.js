@@ -1012,11 +1012,20 @@ var div = React.DOM.div,
     span = React.DOM.span,
     italics = React.DOM.i,
     storagePrefix = 'local:',
+    loginKey = 'editor:login',
     Header, Toolbar, Editor, Dialog;
 
 module.exports = React.createClass({
 
   displayName: 'EditorView',
+  
+  componentDidMount: function() {
+    var rawLoginInfo = localStorage.getItem(loginKey),
+        loginInfo = rawLoginInfo ? JSON.parse(rawLoginInfo) : null;
+    if (loginInfo && loginInfo.email && loginInfo.password) {
+      this.login(loginInfo.email, loginInfo.password);
+    }
+  },
 
   getInitialState: function () {
     var state = this.getEmptyState();
@@ -1190,7 +1199,7 @@ module.exports = React.createClass({
     }
   },
 
-  getAuthClient: function () {
+  getAuthClient: function (callback) {
     var self = this;
     this.authClient = this.authClient || new FirebaseSimpleLogin(this.firebase, function(error, user) {
       var atPos = user && user.email ? user.email.indexOf('@') : 0,
@@ -1203,16 +1212,28 @@ module.exports = React.createClass({
         username: username,
         remoteUrl: self.getRemoteUrl(self.state.filename)
       });
+      if (callback) {
+        callback(error, user);
+      }
     });
     return this.authClient;
   },
 
-  login: function () {
-    var email = prompt('Email?'),
-        password = email ? prompt('Password?') : null;
+  login: function (email, password) {
+    var saveLogin = function (error, user) {
+          if (!error) {
+            localStorage.setItem(loginKey, JSON.stringify({
+              email: email,
+              password: password
+            }));
+          }
+        },
+        
+    email = email || prompt('Email?');
+    password = password || (email ? prompt('Password?') : null);
 
     if (email && password) {
-      this.getAuthClient().login("password", {
+      this.getAuthClient(saveLogin).login("password", {
         email: email,
         password: password
       });
@@ -1223,6 +1244,7 @@ module.exports = React.createClass({
     if (confirm('Are you sure you want to logout?')) {
       this.getAuthClient().logout();
       this.setState({user: null});
+      localStorage.setItem(loginKey, null);
     }
   },
 
@@ -1367,7 +1389,7 @@ Header = React.createFactory(React.createClass({
 }));
 
 Toolbar = React.createFactory(React.createClass({
-  displayName: 'Header',
+  displayName: 'Toolbar',
 
   clicked: function (e) {
     var button = e.target;
