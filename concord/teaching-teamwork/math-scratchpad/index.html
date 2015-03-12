@@ -310,6 +310,16 @@
           input.focus();
         },
         
+        componentDidUpdate: function (prevProps, prevState) {
+          // if history changed then scroll to the bottom
+          if ((JSON.stringify(prevState.history) != JSON.stringify(this.state.history))) {
+            var history = this.refs.history ? this.refs.history.getDOMNode() : null;
+            if (history) {
+              history.scrollTop = history.scrollHeight;
+            }
+          }
+        },
+        
         render: function () {
           var help, history, historyItems, i, output, outputClass;
           
@@ -326,7 +336,7 @@
             else {
               historyItems = 'Press enter after entering an expression below to move it to the history...';
             }
-            history = div({className: 'history'}, historyItems);
+            history = div({className: 'history', ref: 'history'}, historyItems);
           }
           
           outputClass = 'output';
