@@ -4,6 +4,7 @@
     <title>Scratchpad Tester</title>
     
     <script src="http://fb.me/react-with-addons-0.12.2.js"></script>
+    <script src="math.min.js"></script>
     
     <style>
       body {
@@ -231,16 +232,14 @@
             return null;
           }
           try {
-            with (this.evalContext) {
-              output = eval(input);
-            }
+            output = math.eval(input, {});
             if (typeof output != 'number') {
-              return error(true, this.badInputMessage);
+              return error(true, 'Unexpected end of expression');
             }
             return error(false, output)
           }
           catch (e) {
-            return error(true, e.message);
+            return error(true, e.message.replace(/\(char [^)]+\)/, ''));
           }
         },
         
