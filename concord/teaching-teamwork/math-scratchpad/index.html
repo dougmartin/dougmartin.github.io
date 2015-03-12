@@ -289,8 +289,26 @@
         },
         
         historyItemClicked: function (text) {
-          this.getInput().value = text;
-          this.focus();
+          var input = this.getInput(),
+              startPos, endPos;
+          
+          // adapted from http://jsfiddle.net/Znarkus/Z99mK/
+          if (document.selection) {
+            input.focus();
+            document.selection.createRange().text = text;
+          }
+          else if (input.selectionStart || input.selectionStart == '0') {
+            startPos = input.selectionStart;
+            endPos = input.selectionEnd;
+            input.value = input.value.substring(0, startPos) + text + input.value.substring(endPos, input.value.length);
+            input.selectionStart = startPos + text.length;
+            input.selectionEnd = startPos + text.length;
+          } 
+          else {
+            input.value += text;
+          }
+          
+          input.focus();
         },
         
         render: function () {
