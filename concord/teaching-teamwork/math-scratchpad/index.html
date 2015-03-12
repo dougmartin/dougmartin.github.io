@@ -11,10 +11,17 @@
         font: 14px Arial, Helvetica, sans-serif;
       }
       
+      .scratchpad-closed {
+        position: absolute;
+        background-color: #ddd;
+        padding: 10px;
+        background-color: #007;
+        color: #fff;
+        cursor: pointer;
+      }
+      
       .scratchpad-open {
         position: absolute;
-        top: 50px;
-        left: 50px;
         width: 400px;
         border: 1px solid #777;
         background-color: #ddd;
@@ -28,6 +35,15 @@
         background-color: #007;
         color: #fff;
         padding: 5px;
+        cursor: move;
+      }
+      .scratchpad .close {
+        float: right;
+        background-color: #f00;
+        color: #fff;
+        padding: 3px;
+        font-size: 10px;
+        cursor: pointer;
       }
       
       .scratchpad .tabs {
@@ -126,11 +142,12 @@
     <div id="content"></div>
     
     <p>
-      <b>NOTE</b>: In the real version this would popup after a button was clicked and would also be draggable around the page.
+      <b>NOTE</b>: You can now drag the scratchpad around and close it.  For testing it starts in the open state.
     </p>
     
     <script>
       var div = React.DOM.div,
+          span = React.DOM.span,
           p = React.DOM.p,
           table = React.DOM.table,
           tbody = React.DOM.tbody,  
@@ -213,6 +230,10 @@
           
           return {
             open: true,
+            closeRight: 10,
+            closeTop: 10,
+            openRight: 10,
+            openTop: 10,
             output: null,
             history: [],
             showHelp: true
@@ -320,8 +341,63 @@
           }
         },
         
+        startDrag: function (e) {
+          this.dragging = true;
+          this.dragged = false;
+          this.startCalculatorPos = {
+            right: this.state.openRight,
+            top: this.state.openTop,
+          };
+          this.startMousePos = {
+            x: e.clientX,
+            y: e.clientY
+          };
+        },
+
+        drag: function (e) {
+          var newPos;
+          if (this.dragging) {
+            // the calculations are reversed here only because we are setting the right pos and not the left
+            newPos = {
+              openRight: this.startCalculatorPos.right + (this.startMousePos.x - e.clientX),
+              openTop: this.startCalculatorPos.top + (e.clientY - this.startMousePos.y)
+            };
+            if ((newPos.openRight != this.state.openRight) || (newPos.openTop != this.state.openTop)) {
+              this.setState(newPos);
+              this.dragged = true;
+            }
+          }
+        },
+
+        endDrag:  function (e) {
+          if (this.dragged) {
+            /*
+            logController.logEvent("Calculator dragged", null, {
+              "startTop": this.startCalculatorPos.top,
+              "startRight": this.startCalculatorPos.right,
+              "endTop": this.state.openTop,
+              "endRight": this.state.openRight,
+            });
+            */
+            this.dragged = false;
+          }
+          this.dragging = false;
+        },
+        
+        open: function (e) {
+          //logController.logEvent("Opened calculator");
+          this.setState({open: true});
+          e.preventDefault();
+        },
+
+        close: function (e) {
+          //logController.logEvent("Closed calculator");
+          this.setState({open: false});
+          e.preventDefault();
+        },
+        
         render: function () {
-          var help, history, historyItems, i, output, outputClass;
+          var help, history, historyItems, i, output, outputClass, style;
           
           if (this.state.showHelp) {
             help = div({className: 'help'}, this.helpText);
@@ -353,9 +429,17 @@
             output = 'Please enter an expression above ⤴';
           }
           
+          style = {
+            top: this.state.open ? this.state.openTop : this.state.closeTop,
+            right: this.state.open ? this.state.openRight : this.state.closeRight
+          };
+          
           if (this.state.open) {
-            return div({className: 'scratchpad scratchpad-open'}, 
-              div({className: 'title'}, 'Scratchpad'),
+            return div({className: 'scratchpad scratchpad-open', style: style}, 
+              div({className: 'title', onMouseDown: this.startDrag, onMouseMove: this.drag, onMouseUp: this.endDrag}, 
+                'Scratchpad',
+                span({className: 'close', onClick: this.close}, 'X')
+              ),
               div({className: 'tabs'},
                 div({onClick: this.helpTabClicked, className: 'tab ' + (this.state.showHelp ? 'active' : 'inactive')}, 'Help'),
                 div({onClick: this.historyTabClicked, className: 'tab ' + (!this.state.showHelp ? 'active' : 'inactive')}, 'History' + (this.state.history.length > 0 ? ' (' + this.state.history.length + ')' : ''))
@@ -366,6 +450,9 @@
               ),
               div({className: outputClass}, output)
             );
+          }
+          else {
+            return div({className: 'scratchpad scratchpad-closed', onClick: this.open, style: style}, 'Scratchpad');
           }
         }
       }));
