@@ -1,0 +1,72 @@
+{
+  "name": "Three Resistors Solo",
+  "externalComponents": [
+    {
+      "type": "battery",
+      "UID": "source",
+      "voltage": 14,
+      "connections": "battery_1,battery_2"
+    },
+    {
+      "type": "resistor",
+      "UID": "rX",
+      "resistance": "260",
+      "connections": "battery_1,0:off_11",
+      "hidden": true
+    },
+    {
+      "type": "wire",
+      "connections": "battery_2,0:off_10",
+      "hidden": true
+    }
+   ],
+  "clients": [
+    {
+      "showComponentEditor": true,
+      "showComponentDrawer": false,
+      "show_multimeter": true,
+      "notes": "Goal: V1 = 7.00 volts, V2 = 2.78 volts, V3 = 1.54 volts.",
+      "circuit": [
+        {
+          "type": "resistor",
+          "UID": "r1",
+          "label": "R1",
+          "connections": "d18,d24",
+          "resistance": 100,
+          "nominalResistance": 100,
+          "draggable": true
+        },
+        {
+          "type": "resistor",
+          "UID": "r2",
+          "label": "R2",
+          "connections": "c12,c18",
+          "resistance": 100,
+          "nominalResistance": 100,
+          "draggable": true
+        },
+        {
+          "type": "resistor",
+          "UID": "r3",
+          "label": "R3",
+          "connections": "b6,b12",
+          "resistance": 100,
+          "nominalResistance": 100,
+          "draggable": true
+        },
+        {
+          "type": "wire",
+          "UID": "wire",
+          "connections": "off_10,b24",
+          "draggable": true
+        },
+        {
+          "type": "wire",
+          "UID": "wire0",
+          "connections": "off_11,a6",
+          "draggable": true
+        }
+      ]
+    }
+  ]
+}
