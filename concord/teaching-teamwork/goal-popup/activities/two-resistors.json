@@ -1,0 +1,97 @@
+{
+  "name": "Two Resistors",
+  "externalComponents": [
+    {
+      "type": "battery",
+      "UID": "source",
+      "voltage": 9,
+      "connections": "battery_1,battery_2"
+    },
+    {
+      "type": "resistor",
+      "UID": "rX",
+      "resistance": "100",
+      "connections": "battery_2,0:off_11",
+      "hidden": true
+    },
+    {
+      "type": "wire",
+      "connections": "0:off_1,1:off_11",
+      "hidden": true
+    },
+    {
+      "type": "wire",
+      "connections": "1:off_1,battery_1",
+      "hidden": true
+    }
+  ],
+  "goals": [
+    {
+      "Voltage for R1": {
+        "measurement": "voltage(c20,c14)",
+        "value": 2.2,
+        "units": "V",
+        "tolerance": 0.01
+      }
+    },
+    {
+      "Voltage for R2": {
+        "measurement": "voltage(c20,c14)",
+        "value": 4.95,
+        "units": "V",
+        "tolerance": 0.01
+      }
+    }
+  ],
+  "nextLevel": "two-resistors-2",
+  "clients": [
+    {
+      "show_multimeter": true,
+      "showComponentDrawer": true,
+      "circuit": [
+        {
+          "type": "wire",
+          "connections": "off_11,a20",
+          "draggable": false
+        },
+        {
+          "type": "resistor",
+          "UID": "r1",
+          "resistance": "100",
+          "connections": "c20,c14",
+          "label": "R1",
+          "draggable": true
+        },
+        {
+          "type": "wire",
+          "connections": "a14,off_1",
+          "draggable": false
+        }
+      ]
+    },
+    {
+      "show_multimeter": true,
+      "showComponentDrawer": true,
+      "circuit": [
+        {
+          "type": "wire",
+          "connections": "off_11,a20",
+          "draggable": false
+        },
+        {
+          "type": "resistor",
+          "UID": "r2",
+          "resistance": "100",
+          "connections": "c20,c14",
+          "label": "R2",
+          "draggable": true
+        },
+        {
+          "type": "wire",
+          "connections": "a14,off_1",
+          "draggable": false
+        }
+      ]
+    }
+  ]
+}
