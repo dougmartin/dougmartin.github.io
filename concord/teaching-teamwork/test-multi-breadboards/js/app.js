@@ -5,7 +5,7 @@ React.render(App({}), document.getElementById('content'));
 
 
 
-},{"./views/app":7}],2:[function(require,module,exports){
+},{"./views/app":8}],2:[function(require,module,exports){
 module.exports = {
   modelsBase: "activities/"
 };
@@ -127,17 +127,17 @@ var UserRegistrationView = require('../views/userRegistration.jsx'),
     groupName,
     firebaseGroupRef,
     firebaseUsersRef,
-    fbUrl,
     groupUsersListener,
     boardsSelectionListener,
     groupRefCreationListeners,
     client,
     callback,
-    serverSkew;
+    serverSkew,
+    UserController;
 
 // scratch
 var fbUrlDomain = 'https://teaching-teamwork.firebaseio.com/';
-var fbUrlBase = fbUrlDomain + '/dev/';
+var fbUrlBase = fbUrlDomain + 'dev/';
 
 var getDate = function() {
   var today = new Date(),
@@ -171,7 +171,7 @@ offsetRef.on("value", function(snap) {
   serverSkew = snap.val();
 });
 
-module.exports = {
+module.exports = UserController = {
 
   init: function(_numClients, _activityName, _callback) {
     numClients = _numClients;
@@ -179,7 +179,7 @@ module.exports = {
     callback = _callback;
     UserRegistrationView.open(this, {form: "username"});
   },
-
+  
   setName: function(name) {
     userName = name;
     $.cookie('userName', name);
@@ -191,16 +191,14 @@ module.exports = {
       callback(0);
     }
   },
-
+  
   checkGroupName: function(name) {
-    var date = getDate(),
-        self = this;
+    var self = this;
 
     groupName = name;
 
-    fbUrl = fbUrlBase + date + "-" + name + "/activities/" + activityName + "/";
-
-    firebaseGroupRef = new Firebase(fbUrl);
+    UserController.createFirebaseGroupRef(activityName, name);
+    
     firebaseUsersRef = firebaseGroupRef.child('users');
     groupUsersListener = firebaseUsersRef.on("value", function(snapshot) {
       var users = snapshot.val();
@@ -214,6 +212,11 @@ module.exports = {
     firebaseUsersRef.child(userName).set({lastAction: Math.floor(Date.now()/1000)});
 
     logController.logEvent("Started to join group", groupName);
+  },
+
+  createFirebaseGroupRef: function(_activityName, _groupName) {
+    var url = fbUrlBase + getDate() + "-" + _groupName + "/activities/" + _activityName + "/";
+    firebaseGroupRef = new Firebase(url);
   },
 
   rejectGroupName: function() {
@@ -269,6 +272,10 @@ module.exports = {
     return userName;
   },
 
+  getGroupName: function() {
+    return groupName;
+  },
+
   getClient: function () {
     return client;
   },
@@ -304,7 +311,7 @@ module.exports = {
 };
 
 
-},{"../views/userRegistration.jsx":15,"./log":3}],5:[function(require,module,exports){
+},{"../views/userRegistration.jsx":16,"./log":3}],5:[function(require,module,exports){
 /**
  The workbench adaptor takes a TT-workbench definition such as
 
@@ -526,6 +533,22 @@ module.exports = WorkbenchFBConnector;
 
 
 },{}],7:[function(require,module,exports){
+module.exports = function () {
+  var components = sparks.workbenchController.breadboardView.component;
+  for (var key in components) {
+    if (components.hasOwnProperty(key)) {
+      var component = components[key];
+      if (component.type === 'wire') {
+        component.connector.view.find('[type=line]').eq(1).attr('stroke', 'blue');
+        component.connector.view.find('[type=line]').eq(2).attr('stroke', 'blue');
+      }
+    }
+  }
+};
+
+
+
+},{}],8:[function(require,module,exports){
 var PageView              = React.createFactory(require('./page.jsx')),
     WorkbenchAdaptor      = require('../data/workbenchAdaptor'),
     WorkbenchFBConnector  = require('../data/workbenchFBConnector'),
@@ -533,7 +556,8 @@ var PageView              = React.createFactory(require('./page.jsx')),
     userController        = require('../controllers/user'),
     config                = require('../config'),
     OtherCircuitView      = React.createFactory(require('./view-other-circuit')),
-    viewOtherCircuit      = !!window.location.search.match(/view-other-circuit!/);
+    viewOtherCircuit      = !!window.location.search.match(/view-other-circuit!/),
+    forceWiresToBlueHack  = require('../hacks/forceWiresToBlue');
 
 module.exports = React.createClass({
   displayName: 'App',
@@ -548,7 +572,8 @@ module.exports = React.createClass({
       showEditor: !!window.location.search.match(/editor/),
       showSubmit: false,
       goals: null,
-      nextActivity: null
+      nextActivity: null,
+      activityName: null
     };
   },
 
@@ -567,14 +592,15 @@ module.exports = React.createClass({
         showEditor: this.state.showEditor,
         showSubmit: this.state.showSubmit,
         goals: this.state.goals,
-        nextActivity: this.state.nextActivity
+        nextActivity: this.state.nextActivity,
+        activityName: this.state.activityName
       });
     }
   },
 
   componentDidMount: function () {
     var activityName;
-    
+
     if (!viewOtherCircuit) {
       // load blank workbench
       sparks.createWorkbench({"circuit": []}, "breadboard-wrapper");
@@ -684,8 +710,11 @@ module.exports = React.createClass({
       // look for a model and update the workbench values if found
       // NOTE: the callback might be called more than once if there is a race condition setting the model values
       self.preProcessWorkbench(ttWorkbench, function (ttWorkbench) {
-        // reset state after processing the workbench
-        self.setState({activity: ttWorkbench});
+        // reset state after processing the workbench, use cloned copy because workbenchAdaptor.processTTWorkbench() modifies in place
+        self.setState({
+          activity: ttWorkbench,
+          activityName: activityName
+        });
 
         workbenchAdaptor = new WorkbenchAdaptor(clientNumber);
         workbenchFBConnector = new WorkbenchFBConnector(userController, clientNumber, workbenchAdaptor);
@@ -697,6 +726,9 @@ module.exports = React.createClass({
           // sparks is throwing an error when computing the distance between points on load
         }
         
+        // HACK: force all wires to blue
+        forceWiresToBlueHack();
+
         // reset the circuit in firebase so that any old info doesn't display in the submit popup
         workbenchFBConnector.setClientCircuit();
 
@@ -899,7 +931,7 @@ module.exports = React.createClass({
 
 
 
-},{"../config":2,"../controllers/log":3,"../controllers/user":4,"../data/workbenchAdaptor":5,"../data/workbenchFBConnector":6,"./page.jsx":12,"./view-other-circuit":16}],8:[function(require,module,exports){
+},{"../config":2,"../controllers/log":3,"../controllers/user":4,"../data/workbenchAdaptor":5,"../data/workbenchFBConnector":6,"../hacks/forceWiresToBlue":7,"./page.jsx":13,"./view-other-circuit":17}],9:[function(require,module,exports){
 /* global FirebaseSimpleLogin: false */
 /* global CodeMirror: false */
 
@@ -1486,7 +1518,7 @@ Dialog = React.createFactory(React.createClass({
 
 
 
-},{}],9:[function(require,module,exports){
+},{}],10:[function(require,module,exports){
 /* global math: false */
 
 var logController = require('../controllers/log'),
@@ -1895,7 +1927,7 @@ HistoryItem = React.createClass({
 });
 
 
-},{"../controllers/log":3}],10:[function(require,module,exports){
+},{"../controllers/log":3}],11:[function(require,module,exports){
 // adapted from SPARKS math-parser.js
 
 module.exports = React.createClass({
@@ -2035,7 +2067,7 @@ module.exports = React.createClass({
   }
 });
 
-},{}],11:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
 var OtherCircuits, Popup, PopupIFrame, CircuitLink;
 
 module.exports = OtherCircuits = React.createClass({
@@ -2066,7 +2098,9 @@ module.exports = OtherCircuits = React.createClass({
 
       return React.render(Popup({
         circuit: props.circuit,
-        activity: props.activity,
+        activityName: props.activityName,
+        groupName: props.groupName,
+        numClients: props.numClients,
         buttonClicked: closePopup
       }), $anchor.get(0));
     },
@@ -2077,14 +2111,14 @@ module.exports = OtherCircuits = React.createClass({
       $anchor.remove();
     }
   },
-  
+
   showClicked: function () {
     this.setState({showPopup: true});
   },
 
   render: function () {
     var self = this;
-    
+
     setTimeout(function () {
       if (self.state.showPopup) {
         OtherCircuits.showPopup(self.props);
@@ -2103,35 +2137,36 @@ module.exports = OtherCircuits = React.createClass({
 
 PopupIFrame = React.createFactory(React.createClass({
   displayName: 'OtherCircuitsPopupIFrame',
-  
+
   shouldComponentUpdate: function () {
     return false;
   },
-  
+
   componentDidMount: function () {
     var iframe = this.refs.iframe.getDOMNode(),
         payload = {
           circuit: this.props.circuit,
-          activity: this.props.activity
+          activityName: this.props.activityName,
+          groupName: this.props.groupName
         };
     iframe.onload = function () {
       iframe.contentWindow.postMessage(JSON.stringify(payload), window.location.origin);
     };
   },
-  
+
   render: function () {
-    return React.DOM.iframe({ref: 'iframe', src: '?view-other-circuit!', style: {width: 800, height: 500}, onLoad: this.loaded});
+    return React.DOM.iframe({ref: 'iframe', src: '?view-other-circuit!', style: {width: 800, height: 500}, onLoad: this.loaded}, 'Loading...');
   }
 }));
 
 CircuitLink = React.createFactory(React.createClass({
   displayName: 'CircuitLink',
-  
+
   clicked: function (e) {
     e.preventDefault();
     this.props.clicked(this.props.circuit);
   },
-  
+
   render: function () {
     return React.DOM.a({href: '#', onClick: this.clicked, className: this.props.selected ? 'selected' : ''}, "Circuit " + this.props.circuit);
   }
@@ -2140,13 +2175,13 @@ CircuitLink = React.createFactory(React.createClass({
 Popup = React.createFactory(React.createClass({
 
   displayName: 'OtherCircuitsPopup',
-  
+
   getInitialState: function () {
     return {
-      selectedCircuit: parseInt(this.props.circuit, 10) === 1 ? 2 : 1
+      selectedCircuit: 1
     };
   },
-  
+
   linkClicked: function (selectedCircuit) {
     this.setState({selectedCircuit: selectedCircuit});
   },
@@ -2156,14 +2191,14 @@ Popup = React.createFactory(React.createClass({
         iframes = [],
         circuit,
         selected;
-        
-    for (circuit = 1; circuit <= this.props.activity.clients.length; circuit++) {
+
+    for (circuit = 1; circuit <= this.props.numClients; circuit++) {
       selected = circuit == this.state.selectedCircuit;
       links.push(CircuitLink({key: circuit, clicked: this.linkClicked, circuit: circuit, selected: selected}));
-      iframes.push(React.DOM.div({key: circuit, style: {display: selected ? 'block' : 'none'}}, PopupIFrame({circuit: circuit, activity: this.props.activity})));
+      iframes.push(React.DOM.div({key: circuit, style: {display: selected ? 'block' : 'none'}}, PopupIFrame({circuit: circuit, activityName: this.props.activityName, groupName: this.props.groupName})));
     }
-    links.push(React.DOM.button({onClick: this.props.buttonClicked}, 'Close'));
-    
+    links.push(React.DOM.button({key: 'close', onClick: this.props.buttonClicked}, 'Close'));
+
     return React.DOM.div({className: 'other-circuits-button-popup'},
       React.DOM.h1({}, 'All Circuits'),
       React.DOM.div({className: 'links'}, links),
@@ -2173,7 +2208,7 @@ Popup = React.createFactory(React.createClass({
 }));
 
 
-},{}],12:[function(require,module,exports){
+},{}],13:[function(require,module,exports){
 var userController = require('../controllers/user'),
     //ChatView = require('./chat.jsx'),
     SidebarChatView = require('./sidebar-chat.jsx'),
@@ -2199,7 +2234,7 @@ module.exports = React.createClass({
         wrapperClass = hasMultipleClients ? 'multiple-clients' : null,
         image = activity.image ? (React.createElement("div", {id: "image-wrapper", className:  wrapperClass }, React.createElement("img", {src:  /^https?:\/\//.test(activity.image) ? activity.image : config.modelsBase + activity.image}))) : null,
         submitButton = this.props.showSubmit && this.props.circuit ? (React.createElement(SubmitButtonView, {label: hasMultipleClients ? 'We got it!' : "I got it!", goals:  this.props.goals, nextActivity:  this.props.nextActivity})) : null,
-        otherCircuitsButton = hasMultipleClients && this.props.circuit ? (React.createElement(OtherCircuitsView, {circuit:  this.props.circuit, activity:  activity })) : null;
+        otherCircuitsButton = hasMultipleClients && this.props.circuit ? (React.createElement(OtherCircuitsView, {circuit:  this.props.circuit, numClients:  activity.clients.length, activityName:  this.props.activityName, groupName:  userController.getGroupName() })) : null;
 
     return (
       React.createElement("div", {className: "tt-page"}, 
@@ -2221,7 +2256,7 @@ module.exports = React.createClass({
 });
 
 
-},{"../config":2,"../controllers/user":4,"./editor":8,"./mathpad.jsx":9,"./notes":10,"./other-circuits":11,"./sidebar-chat.jsx":13,"./submitButton":14}],13:[function(require,module,exports){
+},{"../config":2,"../controllers/user":4,"./editor":9,"./mathpad.jsx":10,"./notes":11,"./other-circuits":12,"./sidebar-chat.jsx":14,"./submitButton":15}],14:[function(require,module,exports){
 var userController = require('../controllers/user'),
     logController = require('../controllers/log'),
     ChatItems, ChatItem;
@@ -2264,7 +2299,7 @@ module.exports = React.createClass({
     input.focus();
     logController.logEvent("Sent message", message);
   },
-  
+
   listenForEnter: function (e) {
     if (e.keyCode === 13) {
       this.handleSubmit(e);
@@ -2321,7 +2356,7 @@ ChatItem = React.createClass({
 
 
 
-},{"../controllers/log":3,"../controllers/user":4}],14:[function(require,module,exports){
+},{"../controllers/log":3,"../controllers/user":4}],15:[function(require,module,exports){
 var userController = require('../controllers/user'),
     logController = require('../controllers/log'),
     SubmitButton, Popup;
@@ -2510,7 +2545,7 @@ module.exports = SubmitButton = React.createClass({
             goalValue: absGoalValue + units,
             currentValue: absClientGoalValue + units
           });
-          
+
           logParams[item.name + ': Goal'] = absGoalValue;
           logParams[item.name + ': Measured'] = absClientGoalValue;
 
@@ -2556,7 +2591,7 @@ module.exports = SubmitButton = React.createClass({
 
   popupButtonClicked: function () {
     logController.logEvent("Submit close button clicked", this.state.allCorrect ? 'done' : 'resume');
-    
+
     if (this.state.allCorrect) {
       window.location = 'http://concord.org/projects/teaching-teamwork/activities2';
     }
@@ -2664,7 +2699,7 @@ Popup = React.createFactory(React.createClass({
 }));
 
 
-},{"../controllers/log":3,"../controllers/user":4}],15:[function(require,module,exports){
+},{"../controllers/log":3,"../controllers/user":4}],16:[function(require,module,exports){
 var userController, UserRegistrationView;
 
 // add a global UserRegistrationView variable because its statics are called in other modules
@@ -2855,22 +2890,29 @@ module.exports = window.UserRegistrationView = UserRegistrationView = React.crea
 });
 
 
-},{}],16:[function(require,module,exports){
-var WorkbenchAdaptor = require('../data/workbenchAdaptor');
+},{}],17:[function(require,module,exports){
+var userController = require('../controllers/user'),
+    forceWiresToBlueHack = require('../hacks/forceWiresToBlue');
 
 module.exports = React.createClass({
-  
+
   displayName: 'ViewOtherCircuit',
 
   shouldComponentUpdate: function () {
     return false;
-  },  
+  },
 
   render: function () {
-    return React.DOM.div({id: "breadboard-wrapper"});
+    return React.DOM.div({},
+      React.DOM.div({style: {position: 'absolute'}}, 'Loading...'),
+      React.DOM.div({id: "breadboard-wrapper"})
+    );
   },
-  
+
   componentDidMount: function () {
+    var initialDraw = true,
+        redraw;
+    
     // load blank workbench
     try {
       sparks.createWorkbench({"circuit": []}, "breadboard-wrapper");
@@ -2878,23 +2920,43 @@ module.exports = React.createClass({
     catch (e) {
     }
     
+    redraw = function (circuit) {
+      var i, ii, comp;
+      
+      sparks.workbenchController.breadboardController.clear();
+      for (i = 0, ii = circuit.length; i < ii; i++) {
+        comp = circuit[i];
+        sparks.workbenchController.breadboardController.insertComponent(comp.type, comp);          
+      }
+      
+      // HACK: force all wires to blue
+      forceWiresToBlueHack();
+    };
+    
     // listen for workbench load requests
     window.addEventListener("message", function (event) {
       var payload,
-          workbenchAdaptor,
-          workbench;
-          
+          clientNumber,
+          redrawTimeout;
+
       if (event.origin == window.location.origin) {
         payload = JSON.parse(event.data);
-        workbenchAdaptor = new WorkbenchAdaptor(payload.circuit - 1);
-        workbench = workbenchAdaptor.processTTWorkbench(payload.activity);
-        workbench.showComponentEditor = false;
-        workbench.show_multimeter = false;
-        try {
-          sparks.createWorkbench(workbench, "breadboard-wrapper");
-        }
-        catch (e) {
-        }
+        
+        clientNumber = payload.circuit - 1;
+        
+        userController.createFirebaseGroupRef(payload.activityName, payload.groupName);
+        userController.getFirebaseGroupRef().child('clients').child(clientNumber).on('value', function(snapshot) {
+          if (initialDraw) {
+            redraw(snapshot.val());
+          }
+          else {
+            clearTimeout(redrawTimeout);
+            redrawTimeout = setTimeout(function () {
+              redraw(snapshot.val());
+            }, 500);
+          }
+        });
+        
       }
     }, false);
   }
@@ -2907,4 +2969,4 @@ module.exports = React.createClass({
 
 
 
-},{"../data/workbenchAdaptor":5}]},{},[1]);
+},{"../controllers/user":4,"../hacks/forceWiresToBlue":7}]},{},[1]);
