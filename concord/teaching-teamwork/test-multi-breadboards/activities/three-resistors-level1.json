@@ -1,0 +1,152 @@
+{
+  "name": "Three Resistors - Level 1",
+  "image": "images/three-resistors-circuit.v2.png",
+  "model": {
+    "name": "three-resistors",
+    "options": {
+      "level": 1
+    }
+  },
+  "nextActivity": "Move To Level 2",
+  "goals": [
+    {
+      "Voltage across R1": {
+        "measurement": "component_voltage(r1)",
+        "value": "$V1",
+        "units": "V",
+        "tolerance": 0.05
+      }
+    },
+    {
+      "Voltage across R2": {
+        "measurement": "component_voltage(r2)",
+        "value": "$V2",
+        "units": "V",
+        "tolerance": 0.05
+      }
+    },
+    {
+      "Voltage across R3": {
+        "measurement": "component_voltage(r3)",
+        "value": "$V3",
+        "units": "V",
+        "tolerance": 0.05
+      }
+    }
+  ],   
+  "externalComponents": [
+    {
+      "type": "battery",
+      "UID": "source",
+      "voltage": "$E",
+      "connections": "battery_1,0:off_11"
+    },
+    {
+      "type": "wire",
+      "connections": "0:off_1,1:off_11",
+      "hidden": true
+    },
+    {
+      "type": "wire",
+      "connections": "1:off_1,2:off_11",
+      "hidden": true
+    },
+    {
+      "type": "wire",
+      "connections": "2:off_1,battery_1",
+      "hidden": true
+    }
+  ],
+  "logEvent": {
+    "Activity Settings": {
+      "parameters": {
+        "E": "$E",
+        "R0": "0"
+      }
+    },
+    "Activity Goals": {
+      "parameters": {
+        "V1": "$V1",
+        "V2": "$V2",
+        "V3": "$V3"
+      }
+    }
+  },
+  "clients": [
+    {
+      "show_multimeter": true,
+      "showComponentEditor": true,
+      "notes": "Level 1: E = $E, R = 0, your goal is to make your voltage $V1 volts.",
+      "circuit": [
+        {
+          "type": "wire",
+          "connections": "off_11,a20",
+          "draggable": false
+        },
+        {
+          "type": "resistor",
+          "UID": "r1",
+          "resistance": "$R1",
+          "connections": "c20,c14",
+          "label": "R1",
+          "draggable": false
+        },
+        {
+          "type": "wire",
+          "connections": "a14,off_1",
+          "draggable": false
+        }
+      ]
+    },
+    {
+      "show_multimeter": true,
+      "showComponentEditor": true,
+      "notes": "Level 1: E = $E, R = 0, your goal is to make your voltage $V2 volts.",
+      "circuit": [
+        {
+          "type": "wire",
+          "connections": "off_11,a20",
+          "draggable": false
+        },
+        {
+          "type": "resistor",
+          "UID": "r2",
+          "resistance": "$R2",
+          "connections": "c20,c14",
+          "label": "R2",
+          "draggable": false
+        },
+        {
+          "type": "wire",
+          "connections": "a14,off_1",
+          "draggable": false
+        }
+      ]
+    },
+    {
+      "show_multimeter": true,
+      "showComponentEditor": true,
+      "notes": "Level 1: E = $E, R = 0, your goal is to make your voltage $V3 volts.",
+      "circuit": [
+        {
+          "type": "wire",
+          "connections": "off_11,a20",
+          "draggable": false
+        },
+        {
+          "type": "resistor",
+          "UID": "r3",
+          "resistance": "$R3",
+          "connections": "c20,c14",
+          "label": "R3",
+          "draggable": false
+        },
+        {
+          "type": "wire",
+          "connections": "a14,off_1",
+          "draggable": false
+        }
+      ]
+    }
+  ]
+}

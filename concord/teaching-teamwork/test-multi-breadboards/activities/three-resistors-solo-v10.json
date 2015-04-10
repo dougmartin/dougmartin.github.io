@@ -1,0 +1,88 @@
+{
+  "name": "Three Resistors Solo",
+  "image": "images/three-resistors-circuit.v2.png",
+  "externalComponents": [
+    {
+      "type": "battery",
+      "UID": "source",
+      "voltage": 9.6,
+      "connections": "battery_1,battery_2"
+    },
+    {
+      "type": "resistor",
+      "UID": "rX",
+      "resistance": "440",
+      "connections": "battery_1,0:off_11",
+      "hidden": true
+    },
+    {
+      "type": "wire",
+      "connections": "battery_2,0:off_10",
+      "hidden": true
+    }
+   ],
+  "logEvent": {
+    "Activity Settings": {
+      "parameters": {
+        "E": 9.6,
+        "R0": 440
+      }
+    },
+    "Activity Goals": {
+      "parameters": {
+        "V1": 0.91,
+        "V2": 0.41,
+        "V3": 6.06
+      }
+    }
+  },
+  "clients": [
+    {
+      "showComponentEditor": true,
+      "showComponentDrawer": false,
+      "show_multimeter": true,
+      "notes": "Goal: V1 = 0.91 volts, V2 = 0.41 volts, V3 = 6.06 volts.",
+      "circuit": [
+        {
+          "type": "resistor",
+          "UID": "r1",
+          "label": "R1",
+          "connections": "d18,d24",
+          "resistance": 100,
+          "nominalResistance": 100,
+          "draggable": true
+        },
+        {
+          "type": "resistor",
+          "UID": "r2",
+          "label": "R2",
+          "connections": "c12,c18",
+          "resistance": 100,
+          "nominalResistance": 100,
+          "draggable": true
+        },
+        {
+          "type": "resistor",
+          "UID": "r3",
+          "label": "R3",
+          "connections": "b6,b12",
+          "resistance": 100,
+          "nominalResistance": 100,
+          "draggable": true
+        },
+        {
+          "type": "wire",
+          "UID": "wire",
+          "connections": "off_10,b24",
+          "draggable": true
+        },
+        {
+          "type": "wire",
+          "UID": "wire0",
+          "connections": "off_11,a6",
+          "draggable": true
+        }
+      ]
+    }
+  ]
+}
