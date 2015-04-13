@@ -573,7 +573,8 @@ module.exports = React.createClass({
       showSubmit: false,
       goals: null,
       nextActivity: null,
-      activityName: null
+      activityName: null,
+      ttWorkbench: null
     };
   },
 
@@ -593,7 +594,8 @@ module.exports = React.createClass({
         showSubmit: this.state.showSubmit,
         goals: this.state.goals,
         nextActivity: this.state.nextActivity,
-        activityName: this.state.activityName
+        activityName: this.state.activityName,
+        ttWorkbench: this.state.ttWorkbench
       });
     }
   },
@@ -713,6 +715,7 @@ module.exports = React.createClass({
         // reset state after processing the workbench, use cloned copy because workbenchAdaptor.processTTWorkbench() modifies in place
         self.setState({
           activity: ttWorkbench,
+          ttWorkbench: JSON.parse(JSON.stringify(ttWorkbench)),
           activityName: activityName
         });
 
@@ -2101,7 +2104,8 @@ module.exports = OtherCircuits = React.createClass({
         activityName: props.activityName,
         groupName: props.groupName,
         numClients: props.numClients,
-        buttonClicked: closePopup
+        buttonClicked: closePopup,
+        ttWorkbench: props.ttWorkbench
       }), $anchor.get(0));
     },
 
@@ -2147,7 +2151,8 @@ PopupIFrame = React.createFactory(React.createClass({
         payload = {
           circuit: this.props.circuit,
           activityName: this.props.activityName,
-          groupName: this.props.groupName
+          groupName: this.props.groupName,
+          ttWorkbench: this.props.ttWorkbench
         };
     iframe.onload = function () {
       iframe.contentWindow.postMessage(JSON.stringify(payload), window.location.origin);
@@ -2195,7 +2200,7 @@ Popup = React.createFactory(React.createClass({
     for (circuit = 1; circuit <= this.props.numClients; circuit++) {
       selected = circuit == this.state.selectedCircuit;
       links.push(CircuitLink({key: circuit, clicked: this.linkClicked, circuit: circuit, selected: selected}));
-      iframes.push(React.DOM.div({key: circuit, style: {display: selected ? 'block' : 'none'}}, PopupIFrame({circuit: circuit, activityName: this.props.activityName, groupName: this.props.groupName})));
+      iframes.push(React.DOM.div({key: circuit, style: {display: selected ? 'block' : 'none'}}, PopupIFrame({circuit: circuit, activityName: this.props.activityName, groupName: this.props.groupName, ttWorkbench: this.props.ttWorkbench})));
     }
     links.push(React.DOM.button({key: 'close', onClick: this.props.buttonClicked}, 'Close'));
 
@@ -2234,7 +2239,7 @@ module.exports = React.createClass({
         wrapperClass = hasMultipleClients ? 'multiple-clients' : null,
         image = activity.image ? (React.createElement("div", {id: "image-wrapper", className:  wrapperClass }, React.createElement("img", {src:  /^https?:\/\//.test(activity.image) ? activity.image : config.modelsBase + activity.image}))) : null,
         submitButton = this.props.showSubmit && this.props.circuit ? (React.createElement(SubmitButtonView, {label: hasMultipleClients ? 'We got it!' : "I got it!", goals:  this.props.goals, nextActivity:  this.props.nextActivity})) : null,
-        otherCircuitsButton = hasMultipleClients && this.props.circuit ? (React.createElement(OtherCircuitsView, {circuit:  this.props.circuit, numClients:  activity.clients.length, activityName:  this.props.activityName, groupName:  userController.getGroupName() })) : null;
+        otherCircuitsButton = hasMultipleClients && this.props.circuit ? (React.createElement(OtherCircuitsView, {circuit:  this.props.circuit, numClients:  activity.clients.length, activityName:  this.props.activityName, groupName:  userController.getGroupName(), ttWorkbench:  this.props.ttWorkbench})) : null;
 
     return (
       React.createElement("div", {className: "tt-page"}, 
@@ -2891,7 +2896,8 @@ module.exports = window.UserRegistrationView = UserRegistrationView = React.crea
 
 
 },{}],17:[function(require,module,exports){
-var userController = require('../controllers/user'),
+var userController       = require('../controllers/user'),
+    WorkbenchAdaptor     = require('../data/workbenchAdaptor'),
     forceWiresToBlueHack = require('../hacks/forceWiresToBlue');
 
 module.exports = React.createClass({
@@ -2923,6 +2929,10 @@ module.exports = React.createClass({
     redraw = function (circuit) {
       var i, ii, comp;
       
+      if (!circuit) {
+        return;
+      }
+      
       sparks.workbenchController.breadboardController.clear();
       for (i = 0, ii = circuit.length; i < ii; i++) {
         comp = circuit[i];
@@ -2937,12 +2947,18 @@ module.exports = React.createClass({
     window.addEventListener("message", function (event) {
       var payload,
           clientNumber,
+          workbenchAdaptor,
+          workbench,
           redrawTimeout;
 
       if (event.origin == window.location.origin) {
         payload = JSON.parse(event.data);
         
         clientNumber = payload.circuit - 1;
+        
+        workbenchAdaptor = new WorkbenchAdaptor(clientNumber);
+        workbench = workbenchAdaptor.processTTWorkbench(payload.ttWorkbench);
+        redraw(workbench.circuit);
         
         userController.createFirebaseGroupRef(payload.activityName, payload.groupName);
         userController.getFirebaseGroupRef().child('clients').child(clientNumber).on('value', function(snapshot) {
@@ -2969,4 +2985,4 @@ module.exports = React.createClass({
 
 
 
-},{"../controllers/user":4,"../hacks/forceWiresToBlue":7}]},{},[1]);
+},{"../controllers/user":4,"../data/workbenchAdaptor":5,"../hacks/forceWiresToBlue":7}]},{},[1]);
