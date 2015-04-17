@@ -483,6 +483,7 @@ module.exports = WorkbenchAdaptor;
 },{}],6:[function(require,module,exports){
 var clientListFirebaseRef,
     myCircuitFirebaseRef,
+    myMeterFirebaseRef,
     clientNumber,
     wa,
     userController;
@@ -490,8 +491,17 @@ var clientListFirebaseRef,
 function init() {
 
   sparks.logController.addListener(function(evt) {
-    if (evt.name == "Changed circuit") {
-      myCircuitFirebaseRef.set(wa.getClientCircuit());
+    //console.dir(evt);
+    switch (evt.name) {
+      case "Changed circuit":
+        myCircuitFirebaseRef.set(wa.getClientCircuit());
+        break;
+      case "Moved DMM dial":
+        myMeterFirebaseRef.child('DMM').set(evt.value.value);
+        break;
+      case "Attached probe":
+        myMeterFirebaseRef.child('probes').child(evt.value.color).set(evt.value.location);
+        break;
     }
   });
 
@@ -518,6 +528,8 @@ function WorkbenchFBConnector(_userController, _clientNumber, _wa) {
   clientNumber = _clientNumber;
   clientListFirebaseRef = userController.getFirebaseGroupRef().child('clients');
   myCircuitFirebaseRef = clientListFirebaseRef.child(clientNumber);
+  
+  myMeterFirebaseRef = userController.getFirebaseGroupRef().child('meters').child(clientNumber);
 
   wa = _wa;
   init();
@@ -529,12 +541,19 @@ WorkbenchFBConnector.prototype.setClientCircuit = function () {
   }
 };
 
+WorkbenchFBConnector.prototype.resetMeters = function () {
+  if (myMeterFirebaseRef) {
+    myMeterFirebaseRef.set({});
+  }
+};
+
+
 module.exports = WorkbenchFBConnector;
 
 
 },{}],7:[function(require,module,exports){
 module.exports = function () {
-  var components = sparks.workbenchController.breadboardView.component;
+  var components = sparks.workbenchController && sparks.workbenchController.breadboardView ? sparks.workbenchController.component : {};
   for (var key in components) {
     if (components.hasOwnProperty(key)) {
       var component = components[key];
@@ -734,6 +753,7 @@ module.exports = React.createClass({
 
         // reset the circuit in firebase so that any old info doesn't display in the submit popup
         workbenchFBConnector.setClientCircuit();
+        workbenchFBConnector.resetMeters();
 
         self.setState({
           client: ttWorkbench.clients[circuit - 1],
@@ -2071,7 +2091,8 @@ module.exports = React.createClass({
 });
 
 },{}],12:[function(require,module,exports){
-var OtherCircuits, Popup, PopupIFrame, CircuitLink;
+var config = require('../config'),
+    OtherCircuits, Popup, PopupIFrame, CircuitLink, CircuitImage, ScaledIFrame;
 
 module.exports = OtherCircuits = React.createClass({
 
@@ -2160,7 +2181,59 @@ PopupIFrame = React.createFactory(React.createClass({
   },
 
   render: function () {
-    return React.DOM.iframe({ref: 'iframe', src: '?view-other-circuit!', style: {width: 800, height: 500}, onLoad: this.loaded}, 'Loading...');
+    return React.DOM.iframe({ref: 'iframe', src: '?view-other-circuit!', style: {width: 800, height: 500}}, 'Loading...');
+  }
+}));
+
+ScaledIFrame = React.createFactory(React.createClass({
+  displayName: 'OtherCircuitsScaledIFrame',
+
+  shouldComponentUpdate: function () {
+    return false;
+  },
+
+  componentDidMount: function () {
+    var iframe = this.refs.iframe.getDOMNode(),
+        loadMessage = 'loaded:scaled:' + this.props.circuit,
+        payload = {
+          circuit: this.props.circuit,
+          activityName: this.props.activityName,
+          groupName: this.props.groupName,
+          ttWorkbench: this.props.ttWorkbench,
+          loadMessage: loadMessage
+        },
+        listenForLoad = function (event) {
+          if (event.data === loadMessage) {
+            iframe.style.display = 'block';
+            window.removeEventListener("message", listenForLoad);
+          }
+        };
+        
+    iframe.onload = function () {
+      iframe.contentWindow.postMessage(JSON.stringify(payload), window.location.origin);
+    };
+    window.addEventListener("message", listenForLoad);
+  },
+
+  render: function () {
+    var scale = 'scale(' + this.props.scale + ')',
+        origin = '0 0',
+        style = {
+          width: 800, 
+          height: 500, 
+          display: 'none',
+          msTransform: scale,
+          MozTransform: scale,
+          OTransform: scale,
+          WebkitTransform: scale,
+          transform: scale,
+          msTransformOrigin: origin,
+          MozTransformOrigin: origin,
+          OTransformOrigin: origin,
+          WebkitTransformOrigin: origin,
+          transformOrigin: origin
+        };
+    return React.DOM.iframe({ref: 'iframe', src: '?view-other-circuit!', style: style});
   }
 }));
 
@@ -2177,6 +2250,94 @@ CircuitLink = React.createFactory(React.createClass({
   }
 }));
 
+CircuitImage = React.createFactory(React.createClass({
+  
+  displayName: 'CircuitImage',
+  
+  getInitialState: function () {
+    this.imageInfo = this.props.ttWorkbench.otherCircuits;
+    this.breadboards = this.imageInfo.breadboards;
+    return {};
+  },
+  
+  drawImageLayer: function () {
+    var context = this.refs.imageLayer.getDOMNode().getContext('2d'),
+        image = new Image(),
+        self = this;
+        
+    image.src = /^https?:\/\//.test(this.imageInfo.image) ? this.imageInfo.image : config.modelsBase + this.imageInfo.image;
+    image.onload = function () {
+      context.drawImage(image, 0, 0);
+      self.drawClickLayer();
+    };
+  },
+  
+  drawClickLayer: function () {
+    var canvas = this.refs.clickLayer.getDOMNode(),
+        context = canvas.getContext('2d'),
+        breadboard = this.breadboards[this.props.selectedCircuit - 1];
+
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.beginPath();
+    context.lineWidth = 5;
+    context.strokeStyle = '#f3951d';
+    context.rect(breadboard.x, breadboard.y, breadboard.width, breadboard.height);
+    context.stroke();
+    context.closePath();
+  },
+  
+  canvasClicked: function (e) {
+    var canvas = this.refs.clickLayer.getDOMNode(),
+        offset = $(canvas).offset(),
+        x = e.pageX - offset.left, 
+        y = e.pageY - offset.top,
+        i, breadboard;
+    
+    e.preventDefault();
+    for (i = 0; i < this.breadboards.length; i++) {
+      breadboard = this.breadboards[i];
+      if ((x >= breadboard.x) && (x <= breadboard.x + breadboard.width) && (y >= breadboard.y) && (y <= breadboard.y + breadboard.height)) {
+        this.props.clicked(i + 1);
+        break;
+      }
+    }
+  },
+  
+  componentDidMount: function () {
+    this.drawImageLayer();
+  },
+  
+  componentDidUpdate: function () {
+    this.drawClickLayer();
+  },
+  
+  render: function () {
+    var canvasStyle = {
+          position: 'absolute',
+          top: 0,
+          left: 0
+        },
+        iframes = [],
+        i, breadboard, iframeStyle;
+    
+    for (i = 0; i < this.breadboards.length; i++) {
+      breadboard = this.breadboards[i];
+      iframeStyle = {
+        position: 'absolute',
+        top: breadboard.y,
+        left: breadboard.x
+      };
+      iframes.push(React.DOM.div({key: i, style: iframeStyle}, ScaledIFrame({scale: breadboard.width / 800, circuit: i + 1, activityName: this.props.activityName, groupName: this.props.groupName, ttWorkbench: this.props.ttWorkbench})));
+    }
+    
+    return React.DOM.div({style: {position: 'relative', margin: 10, width: this.imageInfo.width, height: this.imageInfo.height}},
+      React.DOM.canvas({ref: 'imageLayer', width: this.imageInfo.width, height: this.imageInfo.height, style: canvasStyle}),
+      iframes,
+      React.DOM.canvas({ref: 'clickLayer', width: this.imageInfo.width, height: this.imageInfo.height, style: canvasStyle, onClick: this.canvasClicked})
+    );
+  }
+}));
+
 Popup = React.createFactory(React.createClass({
 
   displayName: 'OtherCircuitsPopup',
@@ -2187,33 +2348,38 @@ Popup = React.createFactory(React.createClass({
     };
   },
 
-  linkClicked: function (selectedCircuit) {
+  selectedCircuit: function (selectedCircuit) {
     this.setState({selectedCircuit: selectedCircuit});
   },
 
   render: function () {
     var links = [],
         iframes = [],
+        haveImage =  this.props.ttWorkbench.otherCircuits && this.props.ttWorkbench.otherCircuits.image && this.props.ttWorkbench.otherCircuits.breadboards,
         circuit,
         selected;
 
     for (circuit = 1; circuit <= this.props.numClients; circuit++) {
       selected = circuit == this.state.selectedCircuit;
-      links.push(CircuitLink({key: circuit, clicked: this.linkClicked, circuit: circuit, selected: selected}));
+      if (!haveImage) {
+        links.push(CircuitLink({key: circuit, clicked: this.selectedCircuit, circuit: circuit, selected: selected}));
+      }
       iframes.push(React.DOM.div({key: circuit, style: {display: selected ? 'block' : 'none'}}, PopupIFrame({circuit: circuit, activityName: this.props.activityName, groupName: this.props.groupName, ttWorkbench: this.props.ttWorkbench})));
     }
-    links.push(React.DOM.button({key: 'close', onClick: this.props.buttonClicked}, 'Close'));
+    //links.push(React.DOM.button({key: 'close', onClick: this.props.buttonClicked}, 'Close'));
 
     return React.DOM.div({className: 'other-circuits-button-popup'},
+      React.DOM.button({style: {'float': 'right'}, onClick: this.props.buttonClicked}, 'X'),
       React.DOM.h1({}, 'All Circuits'),
-      React.DOM.div({className: 'links'}, links),
+      (haveImage ? CircuitImage({selectedCircuit: this.state.selectedCircuit, clicked: this.selectedCircuit, activityName: this.props.activityName, groupName: this.props.groupName, ttWorkbench: this.props.ttWorkbench}) : null),
+      (links.length > 0 ? React.DOM.div({className: 'links'}, links) : null),
       React.DOM.div({className: 'iframes'}, iframes)
     );
   }
 }));
 
 
-},{}],13:[function(require,module,exports){
+},{"../config":2}],13:[function(require,module,exports){
 var userController = require('../controllers/user'),
     //ChatView = require('./chat.jsx'),
     SidebarChatView = require('./sidebar-chat.jsx'),
@@ -2246,13 +2412,13 @@ module.exports = React.createClass({
         React.createElement("h1", null, "Teaching Teamwork",  activityName ), 
          circuit, 
          submitButton, 
-         otherCircuitsButton, 
         React.createElement("div", {id: "notes-wrapper", className:  wrapperClass }, React.createElement(NotesView, {text:  notes, className: "tt-notes", breadboard:  this.props.breadboard})), 
         React.createElement("div", {id: "breadboard-and-chat-wrapper", className:  wrapperClass }, 
            hasMultipleClients ? (React.createElement("div", {id: "sidebar-chat-wrapper", className:  wrapperClass }, React.createElement(SidebarChatView, React.__spread({},  activity)))) : null, 
           React.createElement("div", {id: "breadboard-wrapper", className:  wrapperClass })
         ), 
          image, 
+         otherCircuitsButton, 
         this.props.activity ? (React.createElement(MathPadView, null)) : null, 
          editor 
       )
@@ -2898,6 +3064,7 @@ module.exports = window.UserRegistrationView = UserRegistrationView = React.crea
 },{}],17:[function(require,module,exports){
 var userController       = require('../controllers/user'),
     WorkbenchAdaptor     = require('../data/workbenchAdaptor'),
+    WorkbenchFBConnector = require('../data/workbenchFBConnector'),
     forceWiresToBlueHack = require('../hacks/forceWiresToBlue');
 
 module.exports = React.createClass({
@@ -2911,21 +3078,16 @@ module.exports = React.createClass({
   render: function () {
     return React.DOM.div({},
       React.DOM.div({style: {position: 'absolute'}}, 'Loading...'),
-      React.DOM.div({id: "breadboard-wrapper"})
+      React.DOM.div({id: "breadboard-wrapper"}),
+      // add a click absorber
+      React.DOM.div({style: {position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0}})
     );
   },
 
   componentDidMount: function () {
     var initialDraw = true,
         redraw;
-    
-    // load blank workbench
-    try {
-      sparks.createWorkbench({"circuit": []}, "breadboard-wrapper");
-    }
-    catch (e) {
-    }
-    
+        
     redraw = function (circuit) {
       var i, ii, comp;
       
@@ -2945,11 +3107,20 @@ module.exports = React.createClass({
     
     // listen for workbench load requests
     window.addEventListener("message", function (event) {
-      var payload,
+      var dialStates = {},
+          i, 
+          model,
+          payload,
           clientNumber,
           workbenchAdaptor,
           workbench,
-          redrawTimeout;
+          redrawTimeout,
+          multimeter,
+          dmm,
+          data,
+          waitForLoad,
+          moveProbe,
+          workbenchFBConnector;
 
       if (event.origin == window.location.origin) {
         payload = JSON.parse(event.data);
@@ -2957,22 +3128,103 @@ module.exports = React.createClass({
         clientNumber = payload.circuit - 1;
         
         workbenchAdaptor = new WorkbenchAdaptor(clientNumber);
+        workbenchFBConnector = new WorkbenchFBConnector(userController, clientNumber, workbenchAdaptor);
         workbench = workbenchAdaptor.processTTWorkbench(payload.ttWorkbench);
-        redraw(workbench.circuit);
+        try {
+          sparks.createWorkbench(workbench, "breadboard-wrapper");
+        }
+        catch (e) {
+        }
         
-        userController.createFirebaseGroupRef(payload.activityName, payload.groupName);
-        userController.getFirebaseGroupRef().child('clients').child(clientNumber).on('value', function(snapshot) {
-          if (initialDraw) {
-            redraw(snapshot.val());
+        // get the dmm and find the dial angles once it loads
+        waitForLoad = function () {
+          var leadForHole;
+          
+          if (sparks.workbenchController && sparks.workbenchController.breadboardView && sparks.workbenchController.breadboardView.multimeter) {
+            multimeter = sparks.workbenchController.breadboardView.multimeter;
+            dmm = sparks.workbenchController.workbench.meter.dmm;
+            
+            // get the dial angles
+            for (i = 0; i < 360; i++) {
+              model = multimeter.mmbox.model(i);
+              if (model && model.length === 2 && !dialStates.hasOwnProperty(model[1])) {
+                dialStates[model[1]] = model;
+              }
+            }
+            
+            // listen for circuit changes
+            userController.createFirebaseGroupRef(payload.activityName, payload.groupName);
+            userController.getFirebaseGroupRef().child('clients').child(clientNumber).on('value', function(snapshot) {
+              if (initialDraw) {
+                redraw(snapshot.val());
+              }
+              else {
+                clearTimeout(redrawTimeout);
+                redrawTimeout = setTimeout(function () {
+                  redraw(snapshot.val());
+                }, 500);
+              }
+            });
+            
+            // find the lead for a hole
+            leadForHole = function (hole) {
+              var itemsList = sparks.workbenchController.breadboardView.itemslist,
+                  i, j, lead;
+              for (i = itemsList.length; i--; ) {
+                for (j = itemsList[i].leads.length; j--; ) {
+                  lead = itemsList[i].leads[j];
+                  if (lead.hole == hole) {
+                    return lead;
+                  }
+                }
+              }
+              return false;
+            };
+            
+            moveProbe = function (color, hole) {
+              var lead = leadForHole(hole);
+              if (multimeter.probe[color].lead != lead) {
+                multimeter.probe[color].setState(lead);
+                dmm.setProbeLocation(color, lead);
+              }
+            };
+            
+            // listen for meter changes
+            userController.getFirebaseGroupRef().child('meters').child(clientNumber).on('value', function (snapshot) {
+              data = snapshot.val();
+                
+              if (data) {
+                // set the probes
+                if (data.probes) {
+                  if (data.probes.black) {
+                    moveProbe('black', data.probes.black);
+                  }
+                  if (data.probes.red) {
+                    moveProbe('red', data.probes.red);
+                  }
+                }
+                
+                // set the DMM
+                if (data.DMM) {
+                  if (dialStates[data.DMM]) {
+                    multimeter.mmbox.setState(dialStates[data.DMM]);
+                  }
+                }
+              }
+            });
           }
           else {
-            clearTimeout(redrawTimeout);
-            redrawTimeout = setTimeout(function () {
-              redraw(snapshot.val());
-            }, 500);
+            setTimeout(waitForLoad, 100);
           }
-        });
-        
+        };
+        waitForLoad();
+
+        // tell the parent that we are loaded after we redraw
+        if (payload.loadMessage) {
+          setTimeout(function () {
+            parent.postMessage(payload.loadMessage, '*');
+          }, 10);
+        }
       }
     }, false);
   }
@@ -2985,4 +3237,4 @@ module.exports = React.createClass({
 
 
 
-},{"../controllers/user":4,"../data/workbenchAdaptor":5,"../hacks/forceWiresToBlue":7}]},{},[1]);
+},{"../controllers/user":4,"../data/workbenchAdaptor":5,"../data/workbenchFBConnector":6,"../hacks/forceWiresToBlue":7}]},{},[1]);
