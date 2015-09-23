@@ -1,0 +1,42 @@
+
+
+/* global */
+
+body {
+  margin: 0px;
+  padding: 0px;
+  overflow: hidden;
+  height: 100%;
+}
+
+p, td, th, body, span, div {
+  font-family: sans-serif;
+}
+
+
+
+/* memory grids */
+
+.Grid {
+/*  border: 1px solid black; */
+  padding: 0px;
+  margin: 0px;
+  table-layout: fixed;
+}
+.Grid th{
+  font-family: sans-serif;
+  font-weight: bold;
+  font-size: 10px;
+  text-align: center;
+  vertical-align: top;
+}
+.Grid td{
+  font-family: monospace;
+  font-size: 9px;
+  vertical-align: middle;
+  overflow: hidden;
+  text-wrap: none;
+}
+
+
+

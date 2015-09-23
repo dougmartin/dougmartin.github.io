@@ -1,0 +1,203 @@
+
+/* main MDI window */
+
+.MDI {
+  position: absolute;
+  top: 38px;
+  bottom: 0px;
+  left: 0px;
+  right: 0px;
+  background-image: url(../img/bg.gif);
+  background-color: #AAA;
+  overflow: auto; 
+}
+
+/* used to handle mouse moves */
+
+.MDICover {
+  position: absolute;
+  top: 0px;
+  bottom: 0px;
+  left: 0px;
+  right: 0px;
+  background-image: url(../img/blank.gif); 
+  z-index: 1000;
+  display: none;
+  cursor: move;
+}
+
+/* moving and resizing frame */
+
+.MDIFrame {
+  position: absolute;
+  border: 2px dashed green;
+  color: green;
+  z-index: 999;
+  display: none;
+}
+
+/* toolbar strip */
+
+.MDIToolbar {
+  position: relative;
+  top: 0px;
+  height: 38px;
+  left: 0px;
+  right: 0px;
+  background-image: url(../img/tb.gif);
+  background-color: #aaa;
+  border: 0px;
+  overflow: hidden; 
+}
+
+/* toolbar buttons */
+
+.MDIToolbar a {
+  position: relative;
+  display: block;
+  float: left;
+  top: 0px;
+  width: 32;
+  height: 32;
+  border: outset transparent;
+  background-repeat: no-repeat;
+  background-position: 0px 0px;
+  margin-left: 10px;
+}
+.MDIToolbar a:hover {
+  border: outset;
+  background-position: -1px -1px;
+  background-color: #bbb;
+}
+.MDIToolbar a:active {
+  border: inset;
+  background-position: 1px 1px;
+  background-color: #888;
+}
+
+/* toolbar slider */
+
+.MDISlider {
+  position: relative;
+  display: block;
+  float: left;
+  top: 0px;
+  width: 80px;
+  height: 34px;
+  margin-left: 10px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.MDISliderText {
+  font-family: sans-serif;
+  text-align: center;
+  width: 100%;
+  margin: 0px;
+  padding: 0px;
+  border: 0px;
+  font-size: 10px;  
+}
+
+.MDISliderTrack {
+  height: 20px;
+  border: 1px solid black;
+  vertical-align: middle;
+}
+
+.MDISliderHandle {
+  width: 19px;
+  height: 20px;
+}
+
+.MDISliderHandle img {
+  float: left;
+}
+
+
+/* mdi window */
+
+.MDIWindow {
+  position: absolute;
+  overflow: hidden;
+  background-color: #eee;
+  border: 0px;
+  padding: 0px;
+  margin: 0px;
+  cursor: default;
+}
+
+.MDITitle {
+  position: absolute;
+  left: 0px;
+  right: 0px;
+  top: 0px;
+  height: 18px;
+  overflow: hidden;
+  padding: 2px;
+  margin: 0px;
+  font-size: 11px;
+  font-family: sans-serif;
+  border-top: 1px solid #888;
+  border-bottom: 1px solid #444;
+  border-left: 1px solid #888;
+  border-right: 1px solid #444;
+  cursor: default;
+}
+
+.MDITitleBlurred {
+  background-color: #dbd;
+  font-weight: normal;
+  color: #666;
+}
+
+.MDITitleFocused {
+  background-color: #eae;
+  font-weight: bold;
+  color: #000;
+}
+
+.MDIScrollBox {
+  position: absolute;
+  top: 20px;
+  bottom: 0px;
+  left: 0px;
+  right: 0px;
+  overflow: scroll;
+  padding: 0px;
+  margin: 0px;
+  background-color: #fff;
+  border: 1px solid #000;
+  cursor: default;
+}
+
+.MDIResize {
+  cursor: se-resize;
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  bottom: 0px;
+  right: 0px;
+  overflow: hidden;
+  padding: 0px;
+  margin: 0px;
+  border: 0px;
+  background-Image: url(../img/resize.gif);
+}
+
+.MDIRollup {
+  cursor: pointer;
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  top: 0px;
+  right: 0px;
+  overflow: hidden;
+  padding: 0px;
+  margin: 0px;
+  border: 0px;
+  background-Image: url(../img/rollup.png);
+}
+
+
+
