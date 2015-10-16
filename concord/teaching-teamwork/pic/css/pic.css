@@ -38,9 +38,31 @@ svg {
   margin: 15px 5px;
 }
 
+#demo-control {
+  position: absolute;
+  top: 75;
+  right: 0;
+  width: 200px;
+  height: 75px;
+  background-color: #777;
+}
+#demo-control-title {
+  padding: 5px;
+  background-color: #ccc;
+}
+#demo-control-area {
+  color: #fff;
+  font-size: 12px;
+  text-align: center;
+}
+#demo-control-area button {
+  margin: 15px 2px;
+}
+
+
 #sidebar {
   position: absolute;
-  top: 75px;
+  top: 150px;
   right: 0;
   bottom: 0;
   width: 200px;
@@ -85,9 +107,18 @@ svg {
   cursor: pointer;
 }
 
+.pin-info {
+}
+
 .pic-info-title {
   padding: 5px;
   background-color: #ccc;
+}
+.pic-info-code-wrapper {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  overflow: auto;
 }
 .pic-info-code {
   padding: 10px;
