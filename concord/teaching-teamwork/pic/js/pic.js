@@ -5,9 +5,7 @@
 
   Todo:
     
-  1. Add connected component rendering
-  2. Add fake chat output
-  3. Add logic probe
+  o Add logic probe
 
 */
 
@@ -22,6 +20,10 @@ var picCode = require('./data/pic-code'),
     path = React.DOM.path,
     button = React.DOM.button,
     g = React.DOM.g,
+    b = React.DOM.b,
+    form = React.DOM.form,
+    textarea = React.DOM.textarea,
+    br = React.DOM.br,
     WORKSPACE_HEIGHT = 768,
     WORKSPACE_WIDTH = 1024 - 200,
     RIBBON_HEIGHT = 21,
@@ -30,7 +32,7 @@ var picCode = require('./data/pic-code'),
     AppView, FakeSidebarView, WorkspaceView, BoardView, Board, RibbonView, ConnectorView,
     Keypad, LED, PIC, Connector, KeypadView, LEDView, PICView,
     ConnectorHoleView, calculateComponentRect, Hole, Pin, PinView,
-    BoardEditorView, SimulatorControlView, Wire, Button, ButtonView, Segment, Circuit, DemoControlView;
+    BoardEditorView, SimulatorControlView, Wire, Button, ButtonView, Segment, Circuit, DemoControlView, ChatItem, ChatItems;
 
 function createComponent(def) {
   return React.createFactory(React.createClass(def));
@@ -43,6 +45,7 @@ function selectedConstants(selected) {
     boardHeight = WORKSPACE_HEIGHT * 0.5;
     return {
       WIRE_WIDTH: 3,
+      FOO_WIRE_WIDTH: 1,
       CONNECTOR_HOLE_DIAMETER: 15,
       CONNECTOR_HOLE_MARGIN: 4,
       BOARD_HEIGHT: boardHeight,
@@ -59,6 +62,7 @@ function selectedConstants(selected) {
     boardHeight = (WORKSPACE_HEIGHT - (2 * RIBBON_HEIGHT)) / 3;
     return {
       WIRE_WIDTH: 2,
+      FOO_WIRE_WIDTH: 1,
       CONNECTOR_HOLE_DIAMETER: 10,
       CONNECTOR_HOLE_MARGIN: 3,
       BOARD_HEIGHT: boardHeight,
@@ -315,7 +319,7 @@ Connector = function (options) {
       x: 0,
       y: 0,
       radius: 0,
-      color: ['blue', 'green', 'purple', 'red'][i],
+      color: ['blue', '#0f0', 'purple', 'red'][i],
       connector: self
     }));
   }  
@@ -844,15 +848,18 @@ Board = function (options) {
   this.components.pic.reset();  
 };
 Board.prototype.clear = function () {
+  var i;
   this.wires = [];
   this.circuits = [];
   this.reset();
+  for (i = 0; i < this.pinsAndHoles.length; i++) {
+    this.pinsAndHoles[i].connected = false;
+  }
 };
 Board.prototype.reset = function () {
   var i;
   for (i = 0; i < this.pinsAndHoles.length; i++) {
     this.pinsAndHoles[i].value = 0;
-    this.pinsAndHoles[i].connected = false;
   }
   for (i = 0; i < this.componentList.length; i++) {
     this.componentList[i].reset();
@@ -1025,8 +1032,8 @@ LEDView = createComponent({
     cc1Pin = this.props.component.pins[2];
     cc2Pin = this.props.component.pins[7];
     ccComponents = g({},
-      line({x1: cc1Pin.x + (cc1Pin.width / 2), y1: cc1Pin.y, x2: cc1Pin.x + (cc1Pin.width / 2), y2: cc1Pin.y - (3 * cc1Pin.width), strokeWidth: constants.WIRE_WIDTH, stroke: '#333'}),
-      line({x1: cc2Pin.x + (cc1Pin.width / 2), y1: cc2Pin.y + cc2Pin.height, x2: cc2Pin.x + (cc1Pin.width / 2), y2: cc2Pin.y + cc2Pin.height + (3 * cc2Pin.width), strokeWidth: constants.WIRE_WIDTH, stroke: '#333'})
+      //line({x1: cc1Pin.x + (cc1Pin.width / 2), y1: cc1Pin.y, x2: cc1Pin.x + (cc1Pin.width / 2), y2: cc1Pin.y - (3 * cc1Pin.width), strokeWidth: constants.FOO_WIRE_WIDTH, stroke: '#333'}),
+      line({x1: cc2Pin.x + (cc1Pin.width / 2), y1: cc2Pin.y + cc2Pin.height, x2: cc2Pin.x + (cc1Pin.width / 2), y2: cc2Pin.y + cc2Pin.height + (3 * cc2Pin.width), strokeWidth: constants.FOO_WIRE_WIDTH, stroke: '#333'})
     );
 
     return g({},
@@ -1110,13 +1117,88 @@ PinView = createComponent({
 PICView = createComponent({
   displayName: 'PICView',
 
-  render: function () {
+  pinWire: function (pin, dx) {
+    var s;
+    dx = dx || 1;
+    s = {x1: pin.x + (pin.width * dx), y1: pin.y + (pin.height / 2), x2: pin.x + pin.width + (3 * pin.width * dx), y2: pin.y + (pin.height / 2)};
+    s.line = this.wireSegment(s).line;
+    return s;
+  },
+  
+  wireSegment: function (s, key) {
     var constants = selectedConstants(this.props.selected),
-        p = this.props.component.position,
+        segment = {x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2, strokeWidth: constants.FOO_WIRE_WIDTH, stroke: '#333'};
+    if (key) {
+      segment.key = key;
+    }
+    segment.line = line(segment);
+    return segment;
+  },
+  
+  renderGround: function (pin, p) {
+    var p2 = {x: p.x, y: p.y + pin.height},
+        segments = [this.wireSegment({key: pin.name + 'down', x1: p.x, y1: p.y, x2: p2.x, y2: p2.y}).line],
+        s, width, height, i;
+        
+    for (i = 0; i < 3; i++) {
+      width = pin.width - (pin.width * (0.33 * i));
+      height = i * (pin.height / 4);
+      s = {x1: p2.x - (width / 2), y1: p2.y + height, x2: p2.x + (width / 2), y2: p2.y + height};
+      segments.push(this.wireSegment(s, pin.name + i).line);
+    }
+        
+    return g({}, segments);
+  },  
+  
+  resistor: function (pin, p) {
+    var width = pin.width / 4,
+        height = pin.height / 2,
+        r = {x1: p.x, y1: p.y, x2: p.x - (12 * width), y2: p.y},
+        segments = [
+          this.wireSegment({x1: r.x1,                 y1: r.y1,          x2: r.x1 - width,         y2: p.y + height}).line,
+          this.wireSegment({x1: r.x1 -      width,    y1: r.y1 + height, x2: r.x1 - (2 * width),   y2: p.y - height}).line,
+          this.wireSegment({x1: r.x1 - (2 * width),   y1: r.y1 - height, x2: r.x1 - (3 * width),   y2: p.y + height}).line,
+          this.wireSegment({x1: r.x1 - (3 * width),   y1: r.y1 + height, x2: r.x1 - (4 * width),   y2: p.y - height}).line,
+          this.wireSegment({x1: r.x1 - (4 * width),   y1: r.y1 - height, x2: r.x1 - (5 * width),   y2: p.y + height}).line,
+          this.wireSegment({x1: r.x1 - (5 * width),   y1: r.y1 + height, x2: r.x1 - (6 * width),   y2: p.y - height}).line,
+          this.wireSegment({x1: r.x1 - (6 * width),   y1: r.y1 - height, x2: r.x1 - (6.5 * width), y2: p.y}).line,
+          this.wireSegment({x1: r.x1 - (6.5 * width), y1: r.y1,          x2: r.x2,                 y2: r.y2}).line
+        ];
+    r.lines = g({}, segments);
+    return r;
+  },
+  
+  capacitor: function (pin, p) {
+    var width = pin.width / 2,
+        height = pin.height / 2,
+        c = {x1: p.x, y1: p.y, x2: p.x + width, y2: p.y},
+        segments = [
+          this.wireSegment({x1: c.x1, y1: c.y1 - height, x2: c.x1, y2: c.y1 + height}).line,
+          this.wireSegment({x1: c.x2, y1: c.y2 - height, x2: c.x2, y2: c.y2 + height}).line
+        ];
+    c.lines = g({}, segments);
+    return c;
+  },
+
+  renderCrystal: function (p) {
+    var constants = selectedConstants(this.props.selected),
+        height = p.height / 5,
+        width = p.width * 0.8,
+        segments = [
+          this.wireSegment({x1: p.x, y1: p.y, x2: p.x, y2: p.y + height}).line,
+          this.wireSegment({x1: p.x - width, y1: p.y + height, x2: p.x + width, y2: p.y + height}).line,
+          rect({x: p.x - p.width, y: p.y + (2 * height), width: (p.width * 2), height: p.height - (4 * height), strokeWidth: constants.FOO_WIRE_WIDTH, stroke: '#333', fill: 'none'}),
+          this.wireSegment({x1: p.x - width, y1: p.y + p.height - height, x2: p.x + width, y2: p.y + p.height - height}).line,
+          this.wireSegment({x1: p.x, y1: p.y + p.height, x2: p.x, y2: p.y + p.height - height}).line
+        ];
+    return g({}, segments);
+  },
+  
+  render: function () {
+    var p = this.props.component.position,
         pins = [],
         pin,
-        i, groundComponents, mclComponents, xtalComponents,
-        xtalLine;
+        i, groundComponents, mclComponents, xtalComponents, vccComponents, s1, w1, w2, r, w3, w4, w5, w6, c1, c2;
         
     for (i = 0; i < this.props.component.pins.length; i++) {
       pin = this.props.component.pins[i];
@@ -1125,24 +1207,48 @@ PICView = createComponent({
     }
 
     pin = this.props.component.pinMap.GND;
+    s1 = {x1: pin.x, y1: pin.y + (pin.height / 2), x2: pin.x - (3 * pin.width), y2: pin.y + (pin.height / 2)};
     groundComponents = g({},
-      line({x1: pin.x, y1: pin.y + (pin.height / 2), x2: pin.x - (3 * pin.width), y2: pin.y + (pin.height / 2), strokeWidth: constants.WIRE_WIDTH, stroke: '#333'})
+      this.wireSegment(s1).line,
+      this.renderGround(pin, {x: s1.x2, y: s1.y2})
     );
     
     pin = this.props.component.pinMap.MCL;
+    s1 = {x1: pin.x, y1: pin.y + (pin.height / 2), x2: pin.x - pin.width, y2: pin.y + (pin.height / 2)};
+    r = this.resistor(pin, {x: s1.x2, y: s1.y2});
     mclComponents = g({},
-      line({x1: pin.x, y1: pin.y + (pin.height / 2), x2: pin.x - (3 * pin.width), y2: pin.y + (pin.height / 2), strokeWidth: constants.WIRE_WIDTH, stroke: '#333'})
+      this.wireSegment(s1).line,
+      r.lines,
+      circle({cx: r.x2 - (pin.width / 2), cy: r.y2, r: pin.width / 2, fill: 'none', stroke: '#333'})
     );
     
-    xtalLine = function (pin) {
-      return line({x1: pin.x + pin.width, y1: pin.y + (pin.height / 2), x2: pin.x + pin.width + (3 * pin.width), y2: pin.y + (pin.height / 2), strokeWidth: constants.WIRE_WIDTH, stroke: '#333'});
-    };
-    
     pin = this.props.component.pinMap.XTAL;
+    w1 = this.pinWire(this.props.component.pins[11]);
+    w2 = this.pinWire(this.props.component.pins[12]);
+    c1 = this.capacitor(this.props.component.pins[11], {x: w1.x2, y: w1.y2});
+    c2 = this.capacitor(this.props.component.pins[12], {x: w2.x2, y: w2.y2});
+    w3 = this.wireSegment({x1: c1.x2, y1: w1.y2, x2: w1.x2 + (2 * pin.width), y2: w1.y2});
+    w4 = this.wireSegment({x1: c2.x2, y1: w2.y2, x2: w3.x2, y2: w2.y2});
+    w5 = this.wireSegment({x1: w2.x2 + (2 * pin.width), y1: w1.y2 + ((w2.y2 - w1.y2) / 2), x2: w2.x2 + (4 * pin.width), y2: w1.y2 + ((w2.y2 - w1.y2) / 2)});
+    w6 = this.wireSegment({x1: w5.x2, y1: w5.y2, x2: w5.x2, y2: w5.y2 + (pin.height)});
     xtalComponents = g({},
-      xtalLine(this.props.component.pins[11]),
-      xtalLine(this.props.component.pins[12]),
-      xtalLine(this.props.component.pins[13])
+      w1.line,
+      w2.line,
+      this.renderCrystal({x: w1.x1 + ((w1.x2 - w1.x1) / 2), y: w1.y1, width: (w1.x2 - w1.x1) / 4, height: w2.y1 - w1.y1}),
+      c1.lines,
+      c2.lines,
+      w3.line,
+      w4.line,
+      this.wireSegment({x1: w3.x2, y1: w3.y2, x2: w4.x2, y2: w4.y2}).line,
+      w5.line,
+      w6.line,
+      this.renderGround(pin, {x: w6.x2, y: w6.y2})
+    );
+    
+    w1 = this.pinWire(this.props.component.pins[13]);
+    vccComponents = g({},
+      w1.line,
+      circle({cx: w1.x2 + (pin.width / 2), cy: w1.y2, r: pin.width / 2, fill: 'none', stroke: '#333'})
     );
     
     return g({},
@@ -1150,7 +1256,8 @@ PICView = createComponent({
       pins,
       groundComponents, 
       mclComponents, 
-      xtalComponents
+      xtalComponents,
+      vccComponents
     );
   }
 });
@@ -1197,7 +1304,7 @@ BoardView = createComponent({
         x2: source.cx,
         y2: source.cy,
         strokeWidth: selectedConstants(this.props.selected).WIRE_WIDTH,
-        stroke: color,
+        stroke: '#ccff00', //color,
         reflection: source.getBezierReflection() * this.props.board.bezierReflectionModifier
       }
     });
@@ -1232,14 +1339,15 @@ BoardView = createComponent({
         style = {
           width: WORKSPACE_WIDTH,
           height: constants.BOARD_HEIGHT,
-          position: 'relative'
+          position: 'relative',
+          cursor: this.props.selected ? 'default' : 'zoom-in'
         },
         connectors = [],
         components = [],
         wires = [],
         componentIndex = 0,
         closeButton = null,
-        name, component, i, wire;
+        name, component, i, wire, stroke;
 
     // resolve input values
     this.props.board.resolveCircuitInputValues();
@@ -1272,11 +1380,10 @@ BoardView = createComponent({
     
     for (i = 0; i < this.props.board.wires.length; i++) {
       wire = this.props.board.wires[i];
-      wires.push(path({key: i, d: getBezierPath({x1: wire.source.cx, y1: wire.source.cy, x2: wire.dest.cx, y2: wire.dest.cy, reflection: wire.getBezierReflection() * this.props.board.bezierReflectionModifier}), strokeWidth: constants.WIRE_WIDTH, stroke: wire.color, fill: 'none', style: {pointerEvents: 'none'}}));
+      stroke = this.state.hoverSource && ((this.state.hoverSource === wire.source) || (this.state.hoverSource === wire.dest)) ? '#ccff00' : wire.color;
+      wires.push(path({key: i, className: 'wire', d: getBezierPath({x1: wire.source.cx, y1: wire.source.cy, x2: wire.dest.cx, y2: wire.dest.cy, reflection: wire.getBezierReflection() * this.props.board.bezierReflectionModifier}), strokeWidth: constants.WIRE_WIDTH, stroke: stroke, fill: 'none', style: {pointerEvents: 'none'}}));
     }
     
-    //bezierPath = this.state.drawConnection ? getBezierPath(this.state.drawConnection) : null;
-
     return div({className: 'board', style: style, onClick: this.props.selected ? null : this.toggleBoard},
       span({className: 'board-user'}, 'Student ' + (this.props.board.number + 1)),
       svg({className: 'board-area'},
@@ -1284,7 +1391,6 @@ BoardView = createComponent({
         connectors,
         components,
         wires,
-        //(bezierPath ? path({d: bezierPath, stroke: this.state.drawConnection.stroke, strokeWidth: this.state.drawConnection.strokeWidth, fill: 'none', style: {pointerEvents: 'none'}}) : null)
         (this.state.drawConnection ? line({x1: this.state.drawConnection.x1, x2: this.state.drawConnection.x2, y1: this.state.drawConnection.y1, y2: this.state.drawConnection.y2, stroke: this.state.drawConnection.stroke, strokeWidth: this.state.drawConnection.strokeWidth, fill: 'none', style: {pointerEvents: 'none'}}) : null)
       )
     );
@@ -1433,7 +1539,7 @@ SimulatorControlView = createComponent({
     }
     
     return div({id: 'simulator-control'},
-      div({id: 'simulator-control-title'}, 'Simulator - ' + (this.props.running ? 'Running' : 'NOT Running')),
+      div({id: 'simulator-control-title'}, 'Simulator'),
       div({id: 'simulator-control-area'}, controls)
     );
   }
@@ -1464,12 +1570,81 @@ DemoControlView = createComponent({
 FakeSidebarView = createComponent({
   displayName: 'FakeSidebarView',
 
+  getInitialState: function() {
+    return {items: []};
+  },
+
+  handleSubmit: function(e) {
+    var input = this.refs.text.getDOMNode();
+    e.preventDefault();
+    
+    this.state.items.push({
+      user: 'Student 1',
+      message: input.value
+    });
+    
+    input.value = '';
+    input.focus();
+    
+    this.setState({items: this.state.items});
+  },
+
+  listenForEnter: function (e) {
+    if (e.keyCode === 13) {
+      this.handleSubmit(e);
+    }
+  },
+  
   render: function () {
-    return div({id: 'sidebar'},
-      div({id: 'sidebar-title'}, 'Chat Sidebar (TBD)')
+    return div({id: 'sidebar-chat'},
+      div({id: 'sidebar-chat-title'}, 'Chat'),
+      ChatItems({items: this.state.items}),
+      div({className: 'sidebar-chat-input'},
+        form({onSubmit: this.handleSubmit},
+          textarea({ref: 'text', placeholder: 'Enter chat message here...', onKeyDown: this.listenForEnter}),
+          br({}),
+          button({onClick: this.handleSubmit}, 'Send Chat Message')
+        )
+      )
     );
   }
 });
+
+ChatItems = createComponent({
+  displayName: 'ChatItems',
+
+  componentDidUpdate: function (prevProps) {
+    if (prevProps.items.length !== this.props.items.length) {
+      var items = this.refs.items ? this.refs.items.getDOMNode() : null;
+      if (items) {
+        items.scrollTop = items.scrollHeight;
+      }
+    }
+  },
+
+  render: function () {
+    var user = 'Student 1',
+        items;
+    items = this.props.items.map(function(item, i) {
+      return ChatItem({key: i, item: item, me: item.user == user});
+    });
+    return div({ref: 'items', className: 'sidebar-chat-items'}, items);
+  }
+});
+
+ChatItem = createComponent({
+  displayName: 'ChatItem',
+
+  render: function () {
+    return div({className: this.props.me ? 'chat-item chat-item-me' : 'chat-item chat-item-others'},
+      b({}, this.props.item.prefix || (this.props.item.user + ':')),
+      this.props.item.message
+    );
+  }
+});
+
+
+//////
 
 AppView = createComponent({
   displayName: 'AppView',
