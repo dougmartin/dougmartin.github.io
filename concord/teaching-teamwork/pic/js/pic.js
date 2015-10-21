@@ -1,11 +1,32 @@
 (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
-// for this mockup I've put all components in one file
-
 /*
 
-  Todo:
-    
-  o Add logic probe
+  Teaching Teamwork PIC Demo
+
+  This file along with the data/pic-code.js file contains all the code for the PIC demo.  When the demo is
+  expanded to a working collaborative environment the components and component state models should probably
+  be split into different files for ease of maintanence.
+
+  The app is split into two parts: 1) React components that render 2) component state models.  The state
+  models are named Foo with a corresponing React component of FooView.  By splitting the state into
+  seperate models an efficent data structure for simulation can be maintained alongside the
+  React component tree.
+
+  Todo for full collaborative environment:
+
+  1. Add user and group dialogs with Firebase connections and update board label
+  2. Add concept of read/write and read-only boards based on the user's assigned board
+  3. Send events to Firebase for
+    a. Keypad selects
+    b. Probe moves
+    c. Wiring setup/changes
+  4. Send events to Log Manager for
+    a. Board zoom in/out
+    b. Add/remove wire
+    c. Move probe
+    d. Start/Stop/Step/Reset simulator
+  5. Add back Firebase support to chat
+  6. Add a "All done!" button
 
 */
 
@@ -31,8 +52,12 @@ var picCode = require('./data/pic-code'),
     UNSELECTED_FILL = '#777',
     AppView, FakeSidebarView, WorkspaceView, BoardView, Board, RibbonView, ConnectorView,
     Keypad, LED, PIC, Connector, KeypadView, LEDView, PICView,
-    ConnectorHoleView, calculateComponentRect, Hole, Pin, PinView,
-    BoardEditorView, SimulatorControlView, Wire, Button, ButtonView, Segment, Circuit, DemoControlView, ChatItem, ChatItems;
+    ConnectorHoleView, Hole, Pin, PinView,
+    BoardEditorView, SimulatorControlView, Wire, Button, ButtonView, Segment, Circuit, DemoControlView, ChatItem, ChatItems, ProbeView;
+
+//
+// Helper functions
+//
 
 function createComponent(def) {
   return React.createFactory(React.createClass(def));
@@ -40,7 +65,7 @@ function createComponent(def) {
 
 function selectedConstants(selected) {
   var boardHeight;
-  
+
   if (selected) {
     boardHeight = WORKSPACE_HEIGHT * 0.5;
     return {
@@ -55,7 +80,11 @@ function selectedConstants(selected) {
       PIC_FONT_SIZE: 12,
       BUTTON_FONT_SIZE: 16,
       PIN_WIDTH: 13.72,
-      PIN_HEIGHT: 13.72
+      PIN_HEIGHT: 13.72,
+      PROBE_WIDTH: 150,
+      PROBE_NEEDLE_HEIGHT: 5,
+      PROBE_HEIGHT: 20,
+      PROBE_MARGIN: 10
     };
   }
   else {
@@ -72,14 +101,18 @@ function selectedConstants(selected) {
       PIC_FONT_SIZE: 8,
       BUTTON_FONT_SIZE: 13,
       PIN_WIDTH: 8.64,
-      PIN_HEIGHT: 8.64
+      PIN_HEIGHT: 8.64,
+      PROBE_WIDTH: 95,
+      PROBE_NEEDLE_HEIGHT: 3,
+      PROBE_HEIGHT: 12,
+      PROBE_MARGIN: 10
     };
   }
 }
 
 function getBezierPath(options) {
   var firstPointIsLowest, lowest, highest, midX, midY, perpSlope, x3, y3, reflection;
-  
+
   firstPointIsLowest = options.y1 > options.y2;
   lowest = {x: firstPointIsLowest ? options.x1 : options.x2, y: firstPointIsLowest ? options.y1: options.y2};
   highest = {x: firstPointIsLowest ? options.x2 : options.x1, y: firstPointIsLowest ? options.y2 : options.y1};
@@ -91,12 +124,36 @@ function getBezierPath(options) {
     perpSlope = 1;
   }
   reflection = highest.x >= lowest.x ? options.reflection : -options.reflection;
-  
+
   x3 = midX + (Math.cos(perpSlope) * 100 * reflection);
   y3 = midY + (Math.sin(perpSlope) * 100 * reflection);
-  
+
   return ['M', options.x1, ',', options.y1, ' Q', x3, ',', y3, ' ', options.x2, ',', options.y2].join('');
 }
+
+function calculateComponentRect(selected, index, count, componentWidth, componentHeight) {
+
+  var constants = selectedConstants(selected),
+      startX, position;
+
+  componentWidth = componentWidth || constants.COMPONENT_WIDTH;
+  componentHeight = componentHeight || constants.COMPONENT_HEIGHT;
+
+  startX = (WORKSPACE_WIDTH - (count * componentWidth) - ((count - 1) * constants.COMPONENT_SPACING)) / 2;
+
+  position = {
+    x: startX + (index * (componentWidth + constants.COMPONENT_SPACING)),
+    y: ((constants.BOARD_HEIGHT - componentHeight) / 2),
+    width: componentWidth,
+    height: componentHeight
+  };
+
+  return position;
+}
+
+//
+// State models
+//
 
 Wire = function (options) {
   this.source = options.source;
@@ -120,10 +177,10 @@ Circuit = function (options) {
 Circuit.ResolveWires = function (wires) {
   var circuits = [],
       wire, i, source, dest;
-      
+
   for (i = 0; i < wires.length; i++) {
     wire = wires[i];
-    
+
     source = Circuit.FindTerminal(wire, wire.source);
     dest = Circuit.FindTerminal(wire, wire.dest);
     if ((source === 'circular') || (dest === 'circular')) {
@@ -138,14 +195,14 @@ Circuit.ResolveWires = function (wires) {
   return circuits;
 };
 Circuit.FindTerminal = function (wire, pinOrHole) {
-  var terminal = pinOrHole, 
+  var terminal = pinOrHole,
       foundWire = true,
       otherConnector, otherHole, otherWire, i;
-  
+
   while (terminal.connector && foundWire) {
     otherConnector = terminal.connector.connectsTo;
     otherHole = otherConnector.holes[terminal.index];
-    
+
     foundWire = false;
     for (i = 0; i < otherConnector.board.wires.length; i++) {
       otherWire = otherConnector.board.wires[i];
@@ -159,14 +216,14 @@ Circuit.FindTerminal = function (wire, pinOrHole) {
       }
     }
   }
-  
+
   return terminal;
 };
 
 Circuit.prototype.resolveInputValues = function () {
   var input = null,
       output = null;
-      
+
   if (this.source.isPin && this.dest.isPin) {
     if (this.source.inputMode && !this.dest.inputMode) {
       input = this.source;
@@ -185,65 +242,11 @@ Circuit.prototype.resolveInputValues = function () {
     input = this.source;
     output = this.dest;
   }
-  
+
   if (input && output) {
-    input.value = output.value;
+    input.setValue(output.value);
   }
 };
-/*
-var name, i, j, wire, source, dest, findTerminal, component;
-
-// create the source and dest pin and hole lists and check for cycles
-findTerminal = function (wire, pinOrHole) {
-  var otherConnector, otherHole, otherWire, i;
-  
-  while (pinOrHole.connector) {
-    otherConnector = pinOrHole.connector.connectsTo;
-    otherHole = otherConnector.holes[pinOrHole.index];
-    for (i = 0; i < otherConnector.board.wires; i++) {
-      otherWire = otherConnector.board.wires[i];
-      if (((otherWire.source === otherHole) || (otherWire.dest === otherHole)) && (otherWire === wire)) {
-        return 'circular';
-      }
-      if (otherWire.source === otherHole) {
-        pinOrHole = otherWire.dest;
-        break;
-      }
-      if (otherWire.dest === otherHole) {
-        pinOrHole = otherWire.source;
-        break;
-      }
-    }
-  }
-  
-  return pinOrHole;
-};
-
-// resolve wire input values
-for (i = 0; i < this.wires.length; i++) {
-  wire = this.wires[i];
-  
-  // find the terminal source and dest pins or holes
-  source = findTerminal(wire, wire.source);
-  dest = findTerminal(wire, wire.dest);
-  if ((source === 'circular') || (dest === 'circular')) {
-    alert('A circular wire graph was found.  Aborting!');
-    return false;
-  }
-  
-  source.inputValue = dest.outputValue;
-  dest.inputValue = source.outputValue;
-}
-*/
-/*
-// find the terminal source and dest pins or holes
-source = findTerminal(wire, wire.source);
-dest = findTerminal(wire, wire.dest);
-if ((source === 'circular') || (dest === 'circular')) {
-  alert('A circular wire graph was found.  Aborting!');
-  return false;
-}
-*/
 
 Button = function (options) {
   this.value = options.value;
@@ -284,9 +287,18 @@ Pin = function (options) {
   this.notConnectable = options.notConnectable || false;
   this.connected = options.connected || false;
   this.value = options.value || 0;
+  this.startingValue = this.value;
 };
 Pin.prototype.getBezierReflection = function () {
   return this.bezierReflection;
+};
+Pin.prototype.setValue = function (newValue) {
+  this.pulseProbeDuration = this.pulseProbeDuration || (newValue != this.value ? 1 : 0);
+  this.value = newValue;
+};
+Pin.prototype.reset = function () {
+  this.value = this.startingValue;
+  this.pulseProbeDuration = 0;
 };
 
 Hole = function (options) {
@@ -303,15 +315,23 @@ Hole = function (options) {
 Hole.prototype.getBezierReflection = function () {
   return this.connector.type === 'input' ? 1 : -1;
 };
+Hole.prototype.setValue = function (newValue) {
+  this.pulseProbeDuration = this.pulseProbeDuration || (newValue != this.value ? 1 : 0);
+  this.value = newValue;
+};
+Hole.prototype.reset = function () {
+  this.value = this.startingValue;
+  this.pulseProbeDuration = 0;
+};
 
 Connector = function (options) {
   var self = this,
       i;
-  
+
   this.type = options.type;
   this.count = options.count;
   this.position = {};
-  
+
   this.holes = [];
   for (i = 0; i < this.count; i++) {
     this.holes.push(new Hole({
@@ -322,7 +342,7 @@ Connector = function (options) {
       color: ['blue', '#0f0', 'purple', 'red'][i],
       connector: self
     }));
-  }  
+  }
 };
 Connector.prototype.calculatePosition = function (selected) {
   var constants = selectedConstants(selected),
@@ -346,33 +366,13 @@ Connector.prototype.calculatePosition = function (selected) {
   }
 };
 
-calculateComponentRect = function (selected, index, count, componentWidth, componentHeight) {
-  
-  var constants = selectedConstants(selected),
-      startX, position;
-      
-  componentWidth = componentWidth || constants.COMPONENT_WIDTH;
-  componentHeight = componentHeight || constants.COMPONENT_HEIGHT;
-  
-  startX = (WORKSPACE_WIDTH - (count * componentWidth) - ((count - 1) * constants.COMPONENT_SPACING)) / 2;
-      
-  position = {
-    x: startX + (index * (componentWidth + constants.COMPONENT_SPACING)),
-    y: ((constants.BOARD_HEIGHT - componentHeight) / 2),
-    width: componentWidth,
-    height: componentHeight
-  };
-  
-  return position;
-};
-
 Keypad = function () {
   var i, pin, button, values;
-  
+
   this.view = KeypadView;
-  
+
   this.pushedButton = null;
-  
+
   this.pins = [];
   this.pinMap = {};
   for (i = 0; i < 7; i++) {
@@ -399,7 +399,7 @@ Keypad = function () {
     this.pins.push(pin);
     this.pinMap[pin.label.text] = pin;
   }
-  
+
   values = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'];
   this.buttons = [];
   for (i = 0; i < 12; i++) {
@@ -426,12 +426,12 @@ Keypad = function () {
 Keypad.prototype.calculatePosition = function (selected, index, count) {
   var constants = selectedConstants(selected),
       padWidth, padHeight, i, pin, j, button, buttonWidth, buttonHeight, buttonDX, buttonDY;
-  
+
   this.position = calculateComponentRect(selected, index, count, constants.COMPONENT_WIDTH * 1.5, constants.COMPONENT_HEIGHT * 1.5);
-  
+
   padWidth = this.position.width * 0.8;
   padHeight = this.position.height * 0.9;
-  
+
   this.position.pad = {
     x: this.position.x + ((this.position.width - padWidth) / 2),
     y: this.position.y + ((this.position.height - padHeight) / 2),
@@ -444,7 +444,7 @@ Keypad.prototype.calculatePosition = function (selected, index, count) {
   buttonHeight = buttonWidth;
   buttonDX = (padWidth - (buttonWidth * 3)) / 4;
   buttonDY = (padHeight - (buttonHeight * 4)) / 5;
-  
+
   for (i = 0; i < 3; i++) {
     for (j = 0; j < 4; j++) {
       button = this.buttons[(j * 3) + i];
@@ -459,7 +459,7 @@ Keypad.prototype.calculatePosition = function (selected, index, count) {
       button.label.y = (button.y + ((buttonHeight + constants.BUTTON_FONT_SIZE) / 2.25));
     }
   }
-  
+
   // upper pins
   for (i = 0; i < 3; i++) {
     pin = this.pins[i];
@@ -469,7 +469,7 @@ Keypad.prototype.calculatePosition = function (selected, index, count) {
     pin.label.y = this.position.pad.y - (1.5 * constants.PIC_FONT_SIZE);
     pin.label.anchor = 'middle';
   }
-  
+
   // right side pins
   for (i = 3; i < this.pins.length; i++) {
     pin = this.pins[i];
@@ -479,7 +479,7 @@ Keypad.prototype.calculatePosition = function (selected, index, count) {
     pin.label.y = pin.y + ((constants.PIN_HEIGHT + constants.PIC_FONT_SIZE) / 2.25);
     pin.label.anchor = 'start';
   }
-  
+
   // update all pins
   for (i = 0; i < this.pins.length; i++) {
     pin = this.pins[i];
@@ -489,7 +489,7 @@ Keypad.prototype.calculatePosition = function (selected, index, count) {
     pin.height = constants.PIN_HEIGHT;
     pin.labelSize = constants.PIC_FONT_SIZE;
   }
-  
+
   this.listeners = [];
 };
 Keypad.prototype.addListener = function (listener) {
@@ -505,8 +505,6 @@ Keypad.prototype.notify = function () {
   }
 };
 Keypad.prototype.reset = function () {
-  this.pushedButton = null;
-  this.notify();
 };
 Keypad.prototype.pushButton = function (button) {
   this.pushedButton = button;
@@ -515,11 +513,13 @@ Keypad.prototype.pushButton = function (button) {
 Keypad.prototype.resolveOutputValues = function () {
   var colValue = 7,
       intValue, bottomButtonIndex;
-  
+
+  console.log(this.pushedButton);
+
   if (this.pushedButton) {
     intValue = this.pushedButton.intValue;
     bottomButtonIndex = this.bottomButtonValues.indexOf(this.pushedButton.value);
-    
+
     if (!this.pinMap.ROW0.value && ((intValue >= 1) && (intValue <= 3))) {
       colValue = colValue & ~(1 << (intValue - 1));
     }
@@ -533,17 +533,17 @@ Keypad.prototype.resolveOutputValues = function () {
       colValue = colValue & ~(1 << bottomButtonIndex);
     }
   }
-  
-  this.pinMap.COL0.value = colValue & 1 ? 1 : 0;
-  this.pinMap.COL1.value = colValue & 2 ? 1 : 0;
-  this.pinMap.COL2.value = colValue & 4 ? 1 : 0;
+
+  this.pinMap.COL0.setValue(colValue & 1 ? 1 : 0);
+  this.pinMap.COL1.setValue(colValue & 2 ? 1 : 0);
+  this.pinMap.COL2.setValue(colValue & 4 ? 1 : 0);
 };
 
 LED = function () {
   var i, pin, segmentLayoutMap, segment;
-  
+
   this.view = LEDView;
-  
+
   this.pins = [];
   this.pinMap = {};
   for (i = 0; i < 10; i++) {
@@ -569,7 +569,7 @@ LED = function () {
     this.pins.push(pin);
     this.pinMap[pin.label.text] = pin;
   }
-  
+
   this.segments = [];
   segmentLayoutMap = [
     {x: 0, y: 0, rotation: 0},
@@ -587,9 +587,9 @@ LED = function () {
       component: this,
       pin: this.pinMap[['a', 'b', 'c', 'd', 'e', 'f', 'g', 'DP'][i]]
     };
-    this.segments.push(new Segment(segment));    
+    this.segments.push(new Segment(segment));
   }
-  
+
   this.decimalPoint = {
     layout: {x: 1, y: 2}
   };
@@ -597,12 +597,12 @@ LED = function () {
 LED.prototype.calculatePosition = function (selected, index, count) {
   var constants = selectedConstants(selected),
       displayWidth, displayHeight, i, pin, pinDX, segmentWidth, segmentHeight, segment, pathCommands, endCapSize, p;
-  
+
   this.position = calculateComponentRect(selected, index, count);
-  
+
   displayWidth = this.position.width * 0.8;
   displayHeight = this.position.height * 0.9;
-  
+
   this.position.display = {
     x: this.position.x + ((this.position.width - displayWidth) / 2),
     y: this.position.y + ((this.position.height - displayHeight) / 2),
@@ -625,7 +625,7 @@ LED.prototype.calculatePosition = function (selected, index, count) {
     pin.label.y = i < 5 ? this.position.display.y + (1.5 * constants.PIC_FONT_SIZE) : this.position.display.y + this.position.display.height - (0.75 * constants.PIC_FONT_SIZE);
     pin.label.anchor = 'middle';
   }
-  
+
   // segments
   segmentWidth = this.position.display.width / 3;
   segmentHeight = this.position.display.width / 12;
@@ -635,7 +635,7 @@ LED.prototype.calculatePosition = function (selected, index, count) {
     segmentWidth: segmentWidth,
     segmentHeight: segmentHeight
   };
-  
+
   endCapSize = segmentHeight / 2;
   pathCommands = [
     'M', p.x, ',', p.y + endCapSize, ' ',
@@ -646,7 +646,7 @@ LED.prototype.calculatePosition = function (selected, index, count) {
     'L', p.x + endCapSize, ',', p.y + segmentHeight, ' ',
     'L', p.x, ',', p.y + endCapSize, ' '
   ].join('');
-      
+
   for (i = 0; i < this.segments.length; i++) {
     segment = this.segments[i];
     segment.transform = ['translate(', segment.layout.x * segmentWidth, ',', segment.layout.y * segmentWidth, ')'].join('');
@@ -655,7 +655,7 @@ LED.prototype.calculatePosition = function (selected, index, count) {
     }
     segment.pathCommands = pathCommands;
   }
-  
+
   this.decimalPoint.cx = this.position.segments.x + segmentWidth + segmentHeight + endCapSize;
   this.decimalPoint.cy = this.position.segments.y + (2 * segmentWidth) + endCapSize;
   this.decimalPoint.radius = endCapSize;
@@ -669,17 +669,18 @@ LED.prototype.resolveOutputValues = function () {
 
 PIC = function (options) {
   var i, pin, notConnectable;
-  
+
   this.view = PICView;
   this.board = options.board;
-  
+
   this.pins = [];
   this.pinMap = {};
   for (i = 0; i < 18; i++) {
     notConnectable = [3, 4, 11, 12, 13].indexOf(i) !== -1;
-    
+
     pin = {
       number: i,
+      value: [3, 11, 12, 13].indexOf(i) !== -1 ? 1 : 0,
       inputMode: !notConnectable,
       placement: i < 9 ? 'left' : 'right',
       x: 0,
@@ -700,11 +701,11 @@ PIC = function (options) {
     this.pins.push(pin);
     this.pinMap[pin.label.text] = pin;
   }
-  
+
   // in reverse order so we can scan it quickly in the getter/setter
   this.portAPins = [this.pinMap.RA0, this.pinMap.RA1, this.pinMap.RA2, this.pinMap.RA3, this.pinMap.RA4];
   this.portBPins = [this.pinMap.RB0, this.pinMap.RB1, this.pinMap.RB2, this.pinMap.RB3, this.pinMap.RB4, this.pinMap.RB5, this.pinMap.RB6, this.pinMap.RB7];
-    
+
   this.ip = 0;
   this.code = options.code;
   this.emulator = options.code.js(this);
@@ -731,7 +732,7 @@ PIC.prototype.calculatePosition = function (selected, index, count) {
   };
 
   pinDY = (this.position.chip.height - (constants.PIN_WIDTH * 9)) / 10;
-  
+
   for (i = 0; i < 2; i++) {
     for (j = 0; j < 9; j++) {
       pinNumber = (i * 9) + j;
@@ -789,10 +790,10 @@ PIC.prototype.setPortB = function (value) {
 PIC.prototype.getPinListValue = function (list) {
   var value = 0,
       i;
-  
+
   // each get causes the board to resolve so that we have the most current value
   this.board.resolveComponentOutputValues();
-  
+
   for (i = 0; i < list.length; i++) {
     value = value | ((list[i].inputMode && list[i].value ? 1 : 0) << i);
   }
@@ -801,7 +802,7 @@ PIC.prototype.getPinListValue = function (list) {
 PIC.prototype.setPinListValue = function (list, value) {
   var i;
   for (i = 0; i < list.length; i++) {
-    list[i].value = !list[i].inputMode && (value & (1 << i)) ? 1 : 0;
+    list[i].setValue(!list[i].inputMode && (value & (1 << i)) ? 1 : 0);
   }
   // each set causes the circuit to be resolved
   this.board.resolveIOValues();
@@ -816,14 +817,14 @@ PIC.prototype.setPinListInputMode = function (list, mask) {
 
 Board = function (options) {
   var i, j;
-  
+
   this.number = options.number;
   this.components = options.components;
   this.connectors = options.connectors;
   this.bezierReflectionModifier = options.bezierReflectionModifier;
   this.wires = [];
   this.circuits = [];
-  
+
   this.pinsAndHoles = [];
   this.componentList = [];
 
@@ -845,7 +846,7 @@ Board = function (options) {
 
   // link the pic to the board and reset it so the pin output is set
   this.components.pic.board = this;
-  this.components.pic.reset();  
+  this.components.pic.reset();
 };
 Board.prototype.clear = function () {
   var i;
@@ -859,7 +860,7 @@ Board.prototype.clear = function () {
 Board.prototype.reset = function () {
   var i;
   for (i = 0; i < this.pinsAndHoles.length; i++) {
-    this.pinsAndHoles[i].value = 0;
+    this.pinsAndHoles[i].reset();
   }
   for (i = 0; i < this.componentList.length; i++) {
     this.componentList[i].reset();
@@ -867,15 +868,15 @@ Board.prototype.reset = function () {
 };
 Board.prototype.removeWire = function (sourceOrDest) {
   var i;
- 
+
   for (i = 0; i < this.wires.length; i++) {
     if (this.wires[i].connectsTo(sourceOrDest)) {
       if (this.wires[i].source.inputMode) {
-        this.wires[i].source.value = 0;
+        this.wires[i].source.reset();
       }
       this.wires[i].source.connected = false;
       if (this.wires[i].dest.inputMode) {
-        this.wires[i].dest.value = 0;
+        this.wires[i].dest.reset();
       }
       this.wires[i].dest.connected = false;
       this.wires.splice(i, 1);
@@ -903,7 +904,7 @@ Board.prototype.addWire = function (source, dest, color) {
     alert("Sorry, you can't add a wire to the " + (source.notConnectable ? source.label.text : dest.label.text) + ' pin.  It is already connected to a breadboard component.');
     return false;
   }
-  
+
   this.removeWire(source);
   this.removeWire(dest);
   this.wires.push(new Wire({
@@ -926,20 +927,20 @@ Board.prototype.resolveCircuits = function() {
     this.circuits = [];
     return true;
   }
-  
+
   newCircuits = Circuit.ResolveWires(this.wires);
   if (newCircuits) {
     this.circuits = newCircuits;
     return true;
   }
-  
+
   return false;
 };
 Board.prototype.resolveCircuitInputValues = function () {
   var i;
   for (i = 0; i < this.circuits.length; i++) {
     this.circuits[i].resolveInputValues();
-  }  
+  }
 };
 Board.prototype.resolveComponentOutputValues = function () {
   var i;
@@ -954,27 +955,31 @@ Board.prototype.resolveIOValues = function () {
   this.resolveCircuitInputValues();
 };
 
+//
+// React Components
+//
+
 KeypadView = createComponent({
   displayName: 'KeypadView',
-  
+
   componentWillMount: function () {
     this.props.component.addListener(this.keypadChanged);
   },
-  
+
   componentWillUnmount: function () {
     this.props.component.removeListener(this.keypadChanged);
   },
-  
+
   keypadChanged: function (keypad) {
     this.setState({pushedButton: keypad.pushedButton});
   },
-  
+
   getInitialState: function () {
     return {
       pushedButton: this.props.component.pushedButton
     };
   },
-  
+
   pushButton: function (button) {
     this.props.component.pushButton(button);
     this.setState({pushedButton: this.props.component.pushedButton});
@@ -985,7 +990,7 @@ KeypadView = createComponent({
         pins = [],
         buttons = [],
         i, pin, button;
-    
+
     for (i = 0; i < this.props.component.pins.length; i++) {
       pin = this.props.component.pins[i];
       pins.push(PinView({key: 'pin' + i, pin: pin, selected: this.props.selected, stepping: this.props.stepping, showDebugPins: this.props.showDebugPins, drawConnection: this.props.drawConnection, reportHover: this.props.reportHover}));
@@ -1007,7 +1012,7 @@ KeypadView = createComponent({
 
 LEDView = createComponent({
   displayName: 'LEDView',
-  
+
   render: function () {
     var constants = selectedConstants(this.props.selected),
         p = this.props.component.position,
@@ -1016,7 +1021,7 @@ LEDView = createComponent({
         pin,
         segments = [],
         segment,
-        i, ccComponents, cc1Pin, cc2Pin;
+        i, ccComponents, ccPin, pinPos;
 
     for (i = 0; i < this.props.component.pins.length; i++) {
       pin = this.props.component.pins[i];
@@ -1028,12 +1033,12 @@ LEDView = createComponent({
       segment = this.props.component.segments[i];
       segments.push(path({key: 'segment' + i, d: segment.pathCommands, fill: segment.pin.connected && !segment.pin.value ? '#ccff00' : UNSELECTED_FILL, transform: segment.transform}));
     }
-    
-    cc1Pin = this.props.component.pins[2];
-    cc2Pin = this.props.component.pins[7];
+
+    ccPin = this.props.component.pins[7];
+    pinPos = {x1: ccPin.x + (ccPin.width / 2), y1: ccPin.y + ccPin.height, x2: ccPin.x + (ccPin.width / 2), y2: ccPin.y + ccPin.height + (3 * ccPin.width)};
     ccComponents = g({},
-      //line({x1: cc1Pin.x + (cc1Pin.width / 2), y1: cc1Pin.y, x2: cc1Pin.x + (cc1Pin.width / 2), y2: cc1Pin.y - (3 * cc1Pin.width), strokeWidth: constants.FOO_WIRE_WIDTH, stroke: '#333'}),
-      line({x1: cc2Pin.x + (cc1Pin.width / 2), y1: cc2Pin.y + cc2Pin.height, x2: cc2Pin.x + (cc1Pin.width / 2), y2: cc2Pin.y + cc2Pin.height + (3 * cc2Pin.width), strokeWidth: constants.FOO_WIRE_WIDTH, stroke: '#333'})
+      line({x1: pinPos.x1, y1: pinPos.y1, x2: pinPos.x2, y2: pinPos.y2, strokeWidth: constants.FOO_WIRE_WIDTH, stroke: '#333'}),
+      circle({cx: pinPos.x2, cy: pinPos.y2 + (pin.height / 2), r: pin.height / 2, fill: 'none', stroke: '#333'})
     );
 
     return g({},
@@ -1048,7 +1053,7 @@ LEDView = createComponent({
 
 ButtonView = createComponent({
   displayName: 'ButtonView',
-  
+
   onClick: function (e) {
     e.preventDefault();
     e.stopPropagation();
@@ -1084,7 +1089,7 @@ PinView = createComponent({
     var pin = this.props.pin,
         showColors = this.props.stepping && this.props.showDebugPins && !pin.notConnectable,
         inputRect, outputRect;
-        
+
     switch (pin.placement) {
       case 'top':
         inputRect = {x: pin.x, y: pin.y + (pin.height / 2), width: pin.width, height: pin.height / 2};
@@ -1103,10 +1108,10 @@ PinView = createComponent({
         inputRect = {x: pin.x + (pin.width / 2), y: pin.y, width: pin.width / 2, height: pin.height};
         break;
     }
-        
+
     inputRect.fill = showColors && pin.inputMode && pin.connected ? (pin.value ? 'red' : 'green') : '#777';
     outputRect.fill = showColors && !pin.inputMode ? (pin.value ? 'red' : 'green') : '#777';
-    
+
     return g({onMouseDown: this.props.selected ? this.startDrag : null, onMouseOver: this.props.selected ? this.mouseOver : null, onMouseOut: this.props.selected ? this.mouseOut : null},
       rect(inputRect),
       rect(outputRect)
@@ -1124,7 +1129,7 @@ PICView = createComponent({
     s.line = this.wireSegment(s).line;
     return s;
   },
-  
+
   wireSegment: function (s, key) {
     var constants = selectedConstants(this.props.selected),
         segment = {x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2, strokeWidth: constants.FOO_WIRE_WIDTH, stroke: '#333'};
@@ -1134,22 +1139,22 @@ PICView = createComponent({
     segment.line = line(segment);
     return segment;
   },
-  
+
   renderGround: function (pin, p) {
     var p2 = {x: p.x, y: p.y + pin.height},
         segments = [this.wireSegment({key: pin.name + 'down', x1: p.x, y1: p.y, x2: p2.x, y2: p2.y}).line],
         s, width, height, i;
-        
+
     for (i = 0; i < 3; i++) {
       width = pin.width - (pin.width * (0.33 * i));
       height = i * (pin.height / 4);
       s = {x1: p2.x - (width / 2), y1: p2.y + height, x2: p2.x + (width / 2), y2: p2.y + height};
       segments.push(this.wireSegment(s, pin.name + i).line);
     }
-        
+
     return g({}, segments);
-  },  
-  
+  },
+
   resistor: function (pin, p) {
     var width = pin.width / 4,
         height = pin.height / 2,
@@ -1167,7 +1172,7 @@ PICView = createComponent({
     r.lines = g({}, segments);
     return r;
   },
-  
+
   capacitor: function (pin, p) {
     var width = pin.width / 2,
         height = pin.height / 2,
@@ -1193,13 +1198,13 @@ PICView = createComponent({
         ];
     return g({}, segments);
   },
-  
+
   render: function () {
     var p = this.props.component.position,
         pins = [],
         pin,
         i, groundComponents, mclComponents, xtalComponents, vccComponents, s1, w1, w2, r, w3, w4, w5, w6, c1, c2;
-        
+
     for (i = 0; i < this.props.component.pins.length; i++) {
       pin = this.props.component.pins[i];
       pins.push(PinView({key: 'pin' + i, pin: pin, selected: this.props.selected, stepping: this.props.stepping, showDebugPins: this.props.showDebugPins, drawConnection: this.props.drawConnection, reportHover: this.props.reportHover}));
@@ -1212,7 +1217,7 @@ PICView = createComponent({
       this.wireSegment(s1).line,
       this.renderGround(pin, {x: s1.x2, y: s1.y2})
     );
-    
+
     pin = this.props.component.pinMap.MCL;
     s1 = {x1: pin.x, y1: pin.y + (pin.height / 2), x2: pin.x - pin.width, y2: pin.y + (pin.height / 2)};
     r = this.resistor(pin, {x: s1.x2, y: s1.y2});
@@ -1221,7 +1226,7 @@ PICView = createComponent({
       r.lines,
       circle({cx: r.x2 - (pin.width / 2), cy: r.y2, r: pin.width / 2, fill: 'none', stroke: '#333'})
     );
-    
+
     pin = this.props.component.pinMap.XTAL;
     w1 = this.pinWire(this.props.component.pins[11]);
     w2 = this.pinWire(this.props.component.pins[12]);
@@ -1244,20 +1249,129 @@ PICView = createComponent({
       w6.line,
       this.renderGround(pin, {x: w6.x2, y: w6.y2})
     );
-    
+
     w1 = this.pinWire(this.props.component.pins[13]);
     vccComponents = g({},
       w1.line,
       circle({cx: w1.x2 + (pin.width / 2), cy: w1.y2, r: pin.width / 2, fill: 'none', stroke: '#333'})
     );
-    
+
     return g({},
       rect({x: p.chip.x, y: p.chip.y, width: p.chip.width, height: p.chip.height, fill: '#333'}),
       pins,
-      groundComponents, 
-      mclComponents, 
+      groundComponents,
+      mclComponents,
       xtalComponents,
       vccComponents
+    );
+  }
+});
+
+ProbeView = createComponent({
+  displayName: 'ProbeView',
+
+  getInitialState: function () {
+    return {
+      dragging: false
+    };
+  },
+
+  startDrag: function (e) {
+    var constants = selectedConstants(this.props.selected),
+        $window = $(window),
+        self = this,
+        dx, dy, drag, stopDrag;
+
+    e.preventDefault();
+
+    dx = e.pageX - e.nativeEvent.offsetX;
+    dy = e.pageY - e.nativeEvent.offsetY;
+
+    drag = function (e) {
+      e.preventDefault();
+      self.props.setProbe({source: null, pos: {x: (e.pageX - dx), y: (e.pageY - dy) - (constants.PROBE_HEIGHT / 2)}});
+    };
+
+    stopDrag = function (e) {
+      e.preventDefault();
+      $window.off('mousemove', drag);
+      $window.off('mouseup', stopDrag);
+      if (self.props.hoverSource) {
+        self.props.hoverSource.pulseProbeDuration = 0;
+      }
+      self.props.setProbe({source: self.props.hoverSource, pos: null});
+    };
+
+    $window.on('mousemove', drag);
+    $window.on('mouseup', stopDrag);
+  },
+
+  render: function () {
+    var constants = selectedConstants(this.props.selected),
+        width = constants.PROBE_WIDTH,
+        height = constants.PROBE_HEIGHT,
+        halfNeedleHeight = constants.PROBE_NEEDLE_HEIGHT / 2,
+        x = this.props.probeSource ? this.props.probeSource.cx : (this.props.pos ? this.props.pos.x : WORKSPACE_WIDTH - constants.PROBE_WIDTH - constants.PROBE_MARGIN),
+        y = this.props.probeSource ? this.props.probeSource.cy - (height / 2) : (this.props.pos ? this.props.pos.y : constants.BOARD_HEIGHT - constants.PROBE_HEIGHT - constants.PROBE_MARGIN),
+        middleY = y + (height / 2),
+        defaultFill = 0.125,
+        redFill = defaultFill,
+        greenFill = defaultFill,
+        amberFill = defaultFill,
+        needlePath, handlePath;
+
+    if (this.props.probeSource && (!this.props.probeSource.inputMode || this.props.probeSource.connected)) {
+      if (this.props.probeSource.value) {
+        redFill = 1;
+      }
+      else {
+        greenFill = 1;
+      }
+
+      if (this.props.probeSource.pulseProbeDuration) {
+        amberFill = 1;
+
+        if (this.props.stepping) {
+          // show for only 1 step
+          this.props.probeSource.pulseProbeDuration = 0;
+        }
+        else {
+          // show for 3 renders (300ms) and then hide for 3 renders (300ms)
+          this.props.probeSource.pulseProbeDuration++;
+          if (this.props.probeSource.pulseProbeDuration > 3) {
+            amberFill = 0;
+          }
+          if (this.props.probeSource.pulseProbeDuration > 6) {
+            this.props.probeSource.pulseProbeDuration = 0;
+          }
+        }
+      }
+    }
+
+    needlePath = [
+      'M', x, ',', middleY, ' ',
+      'L', x + halfNeedleHeight, ',', middleY - halfNeedleHeight, ' ',
+      'L', x + height, ',', middleY - halfNeedleHeight, ' ',
+      'L', x + height, ',', middleY + halfNeedleHeight, ' ',
+      'L', x + halfNeedleHeight, ',', middleY + halfNeedleHeight, ' ',
+      'L', x, ',', middleY, ' '
+    ].join('');
+
+    handlePath = [
+      'M', x + height, ',', middleY - halfNeedleHeight, ' ',
+      'L', x + (2 * height), ',', y, ' ',
+      'L', x + width, ',', y, ' ',
+      'L', x + width, ',', y + height, ' ',
+      'L', x + (2 * height), ',', y + height, ' ',
+      'L', x + height, ',', middleY + halfNeedleHeight, ' '
+    ].join('');
+
+    return g({transform: ['rotate(-15 ', x, ' ', y + (height / 2), ')'].join(''), onMouseDown: this.startDrag},
+      path({d: needlePath, fill: '#c0c0c0', stroke: '#777', style: {pointerEvents: 'none'}}),
+      path({d: handlePath, fill: '#eee', stroke: '#777'}), // '#FDCA6E'
+      circle({cx: x + (4 * height), cy: middleY, r: height / 4, fill: 'red', fillOpacity: redFill}),
+      circle({cx: x + (5 * height), cy: middleY, r: height / 4, fill: 'green', fillOpacity: greenFill}),
+      circle({cx: x + (6 * height), cy: middleY, r: height / 4, fill: '#ffbf00', fillOpacity: amberFill})
     );
   }
 });
@@ -1273,29 +1387,30 @@ BoardView = createComponent({
     return {
       drawConnection: null,
       hoverSource: null,
-      wires: this.props.board.wires
+      wires: this.props.board.wires,
+      probeSource: this.props.board.probe ? this.props.board.probe.source : null,
+      probePos: this.props.board.probe ? this.props.board.probe.pos : null
     };
   },
 
   reportHover: function (hoverSource) {
     this.setState({hoverSource: hoverSource});
   },
-  
+
+  setProbe: function (probe) {
+    this.props.board.probe = probe;
+    this.setState({probeSource: probe.source, probePos: probe.pos});
+  },
+
   drawConnection: function (source, e, color) {
     var $window = $(window),
         self = this,
         dx, dy, drag, stopDrag;
 
     e.preventDefault();
-    
+
     dx = e.pageX - e.nativeEvent.offsetX;
     dy = e.pageY - e.nativeEvent.offsetY;
-
-    // remove the existing wire
-    if (this.props.board.removeWire(source)) {
-      this.props.board.resolveCircuits();
-      this.setState({wires: this.props.board.wires});
-    }
 
     this.setState({
       drawConnection: {
@@ -1318,13 +1433,13 @@ BoardView = createComponent({
 
     stopDrag = function (e) {
       var dest = self.state.hoverSource;
-      
+
       e.preventDefault();
       $window.off('mousemove', drag);
       $window.off('mouseup', stopDrag);
       self.setState({drawConnection: null});
-      
-      if (dest) {
+
+      if (dest && (dest !== source)) {
         self.props.board.addWire(source, dest, (source.color || dest.color || color));
         self.setState({wires: self.props.board.wires});
       }
@@ -1351,7 +1466,7 @@ BoardView = createComponent({
 
     // resolve input values
     this.props.board.resolveCircuitInputValues();
-    
+
     // calculate the position so the wires can be updated
     if (this.props.board.connectors.input) {
       this.props.board.connectors.input.calculatePosition(this.props.selected);
@@ -1377,13 +1492,13 @@ BoardView = createComponent({
         line({x1: style.width - 10, y1: 10, x2: style.width - 20, y2: 20, strokeWidth: 2, stroke: '#fff'})
       );
     }
-    
+
     for (i = 0; i < this.props.board.wires.length; i++) {
       wire = this.props.board.wires[i];
       stroke = this.state.hoverSource && ((this.state.hoverSource === wire.source) || (this.state.hoverSource === wire.dest)) ? '#ccff00' : wire.color;
       wires.push(path({key: i, className: 'wire', d: getBezierPath({x1: wire.source.cx, y1: wire.source.cy, x2: wire.dest.cx, y2: wire.dest.cy, reflection: wire.getBezierReflection() * this.props.board.bezierReflectionModifier}), strokeWidth: constants.WIRE_WIDTH, stroke: stroke, fill: 'none', style: {pointerEvents: 'none'}}));
     }
-    
+
     return div({className: 'board', style: style, onClick: this.props.selected ? null : this.toggleBoard},
       span({className: 'board-user'}, 'Student ' + (this.props.board.number + 1)),
       svg({className: 'board-area'},
@@ -1391,7 +1506,8 @@ BoardView = createComponent({
         connectors,
         components,
         wires,
-        (this.state.drawConnection ? line({x1: this.state.drawConnection.x1, x2: this.state.drawConnection.x2, y1: this.state.drawConnection.y1, y2: this.state.drawConnection.y2, stroke: this.state.drawConnection.stroke, strokeWidth: this.state.drawConnection.strokeWidth, fill: 'none', style: {pointerEvents: 'none'}}) : null)
+        (this.state.drawConnection ? line({x1: this.state.drawConnection.x1, x2: this.state.drawConnection.x2, y1: this.state.drawConnection.y1, y2: this.state.drawConnection.y2, stroke: this.state.drawConnection.stroke, strokeWidth: this.state.drawConnection.strokeWidth, fill: 'none', style: {pointerEvents: 'none'}}) : null),
+        ProbeView({selected: this.props.selected, stepping: this.props.stepping, probeSource: this.state.probeSource, hoverSource: this.state.hoverSource, pos: this.state.probePos, setProbe: this.setProbe})
       )
     );
   }
@@ -1466,10 +1582,10 @@ BoardEditorView = createComponent({
         width: WORKSPACE_WIDTH,
         top: constants.BOARD_HEIGHT + 28
       };
-      
-    return div({className: 'pic-info'}, 
+
+    return div({className: 'pic-info'},
       div({className: 'pic-info-title'}, 'Code'),
-      div({className: 'pic-info-code-wrapper', style: style}, 
+      div({className: 'pic-info-code-wrapper', style: style},
         div({className: 'pic-info-code'}, this.props.board.components.pic.code.asm)
       )
     );
@@ -1492,7 +1608,7 @@ WorkspaceView = createComponent({
   render: function () {
     if (this.state.selectedBoard) {
       return div({id: 'workspace'},
-        BoardView({board: this.state.selectedBoard, selected: true, stepping: this.props.stepping, showDebugPins: this.props.showDebugPins, toggleBoard: this.toggleBoard}),
+        BoardView({key: 'selectedBoard' + this.state.selectedBoard.number, board: this.state.selectedBoard, selected: true, stepping: this.props.stepping, showDebugPins: this.props.showDebugPins, toggleBoard: this.toggleBoard}),
         BoardEditorView({board: this.state.selectedBoard})
       );
     }
@@ -1510,7 +1626,7 @@ WorkspaceView = createComponent({
 
 SimulatorControlView = createComponent({
   displayName: 'SimulatorControlView',
-  
+
   stop: function () {
     this.props.run(false);
   },
@@ -1537,7 +1653,7 @@ SimulatorControlView = createComponent({
       controls.push(button({key: 'step', onClick: this.step}, 'Step'));
       controls.push(button({key: 'reset', onClick: this.reset}, 'Reset'));
     }
-    
+
     return div({id: 'simulator-control'},
       div({id: 'simulator-control-title'}, 'Simulator'),
       div({id: 'simulator-control-area'}, controls)
@@ -1547,7 +1663,7 @@ SimulatorControlView = createComponent({
 
 DemoControlView = createComponent({
   displayName: 'DemoControlView',
-  
+
   toggleAllWires: function () {
     this.props.toggleAllWires();
   },
@@ -1559,7 +1675,7 @@ DemoControlView = createComponent({
   render: function () {
     return div({id: 'demo-control'},
       div({id: 'demo-control-title'}, 'Demo Control'),
-      div({id: 'demo-control-area'}, 
+      div({id: 'demo-control-area'},
         button({onClick: this.toggleAllWires}, (this.props.addedAllWires ? '-' : '+') + ' Wires'),
         !this.props.running ? button({onClick: this.toggleDebugPins}, (this.props.showDebugPins ? '-' : '+') + ' Pin Colors') : null
       )
@@ -1577,15 +1693,15 @@ FakeSidebarView = createComponent({
   handleSubmit: function(e) {
     var input = this.refs.text.getDOMNode();
     e.preventDefault();
-    
+
     this.state.items.push({
       user: 'Student 1',
       message: input.value
     });
-    
+
     input.value = '';
     input.focus();
-    
+
     this.setState({items: this.state.items});
   },
 
@@ -1594,7 +1710,7 @@ FakeSidebarView = createComponent({
       this.handleSubmit(e);
     }
   },
-  
+
   render: function () {
     return div({id: 'sidebar-chat'},
       div({id: 'sidebar-chat-title'}, 'Chat'),
@@ -1643,9 +1759,6 @@ ChatItem = createComponent({
   }
 });
 
-
-//////
-
 AppView = createComponent({
   displayName: 'AppView',
 
@@ -1659,17 +1772,17 @@ AppView = createComponent({
           new Board({number: 1, bezierReflectionModifier: -0.5, components: {pic: new PIC({code: picCode[1]})}, connectors: {input: board1Input, output: board1Output}}),
           new Board({number: 2, bezierReflectionModifier: 0.75, components: {pic: new PIC({code: picCode[2]}), led: new LED()}, connectors: {input: board2Input}})
         ];
-        
+
     board0Output.connectsTo = board1Input;
     board1Input.connectsTo = board0Output;
     board1Output.connectsTo = board2Input;
     board2Input.connectsTo = board1Output;
-    
+
     board0Output.board = boards[0];
     board1Input.board = boards[1];
     board1Output.board = boards[1];
     board2Input.board = boards[2];
-        
+
     return {
       boards: boards,
       running: false,
@@ -1677,10 +1790,10 @@ AppView = createComponent({
       addedAllWires: false
     };
   },
-  
+
   simulate: function (step) {
     var i, pic;
-    
+
     if (this.state.running || step) {
       for (i = 0; i < this.state.boards.length; i++) {
         pic = this.state.boards[i].components.pic;
@@ -1694,14 +1807,14 @@ AppView = createComponent({
       this.setState({boards: this.state.boards});
     }
   },
-  
+
   reset: function () {
     for (var i = 0; i < this.state.boards.length; i++) {
       this.state.boards[i].reset();
     }
     this.setState({boards: this.state.boards});
   },
-  
+
   run: function (run) {
     clearInterval(this.simulatorInterval);
     if (run) {
@@ -1709,30 +1822,30 @@ AppView = createComponent({
     }
     this.setState({running: run});
   },
-  
+
   step: function () {
     this.simulate(true);
   },
-  
+
   toggleAllWires: function () {
     var defaultColor = '#555',
-        
+
         b0 = this.state.boards[0],
         b0Keypad = b0.components.keypad.pinMap,
         b0PIC = b0.components.pic.pinMap,
         b0o = b0.connectors.output.holes,
-        
+
         b1 = this.state.boards[1],
         b1PIC = b1.components.pic.pinMap,
         b1o = b1.connectors.output.holes,
         b1i = b1.connectors.input.holes,
-        
+
         b2 = this.state.boards[2],
         b2PIC = b2.components.pic.pinMap,
         b2LED = b2.components.led.pinMap,
         b2i = b2.connectors.input.holes,
         wire, boardWires, i, j;
-        
+
     boardWires = [
       [
         {source: b0Keypad.COL0, dest: b0PIC.RB0, color: defaultColor},
@@ -1771,7 +1884,7 @@ AppView = createComponent({
         {source: b2PIC.RB6, dest: b2LED.g, color: defaultColor}
       ]
     ];
-  
+
     for (i = 0; i < this.state.boards.length; i++) {
       this.state.boards[i].clear();
       if (!this.state.addedAllWires) {
@@ -1781,10 +1894,10 @@ AppView = createComponent({
         }
       }
     }
-    
+
     this.setState({boards: this.state.boards, addedAllWires: !this.state.addedAllWires});
   },
-  
+
   toggleDebugPins: function () {
     this.setState({showDebugPins: !this.state.showDebugPins});
   },
@@ -1799,6 +1912,10 @@ AppView = createComponent({
   }
 });
 
+//
+// Main
+//
+
 React.render(AppView({}), document.getElementById('content'));
 
 
@@ -1806,197 +1923,195 @@ React.render(AppView({}), document.getElementById('content'));
 var code = [];
 code.push({
   asm: [
-      ";*************************************************************************************",
-      ";	Lab Assignment: TT Board 1 ",
-      ";	Program File Name: TT Circuit 1.asm",
-      ";	Name:Al Koon  ",
-      ";	Date:9/30/15  ",
-      ";",
-      ";   Software:	",
-      ";   This program takes a key that is pressed on the keypad and ",
-      ";   converts it to a 4 bit binary number RRCC Where RR is Row and CC is column ",
-      ";",
-      ";*************************************************************************************",
-      "",
-      ";======================= Configuration Register Programming =====================",
-      ";This loading of the CONFIG register with the WDT turned off and the security",
-      ";inactive.",
-      "",
-      " __CONFIG 0x3FFA	;0x3FFA hex = b'11 1111 1111 1010'",
-      "",
-      ";  Bits 13 - 4 Code Protect Bits, Bit 3 Power Up Timer, Bit 2 Watch Dog Timer,",
-      ";  Bits 1 and 0 are Oscillator Select Bits",
-      ";",
-      ";=========================================================================",
-      ";============================= Equates=====================================",
-      "",
-      "Keypr	equ	0x0c	;First DRAM location used as short term storage",
-      "Col	equ	0x0d	;Second DRAM location used as short term storage",
-      "Row  	equ 	0x0e    ;Third DRAM location used for short term storage",
-      ";=========================================================================",
-      ";  Information the assembler needs to create proper files and program output",
-      "",
-      "",
-      "	title\"TT Circuit 1\" 	;Title of lab printed on History File",
-      "	list p=16f84A		;Directive telling Assembler which PIC to use",
-      "	#include <ETR261.h>	;Header file to make programming simpler",
-      "",
-      ";=========================================================================",
-      "",
-      "		org 00h		;starting address for the program in PRAM",
-      "		goto Start	;skip over the interrupt address",
-      "		org 04h		;starting address for the start of code",
-      "		retfie		;return from interrupt to take care of an false interrupt",
-      "",
-      ";=========================================================================",
-      "",
-      "Start	movlw	0xf0		;setup PORTA",
-      "		tris	PORTA",
-      "		",
-      "		movlw 	0x87		;setup PORTB",
-      "		tris	PORTB",
-      "		movlw	0x0F",
-      "		movwf	PORTA",
-      "again	movlw	0xf0		;scan row 1",
-      "		movwf	Row",
-      "		movwf	PORTB",
-      "		call	KEY",
-      "",
-      "		movlw	0xe8		;scan row 2",
-      "		movwf	Row",
-      "		movwf	PORTB",
-      "		call	KEY",
-      "",
-      "		movlw	0xd8		;scan row 3",
-      "		movwf	Row",
-      "		movwf	PORTB",
-      "		call	KEY",
-      "",
-      "		movlw	0xb8		;scan row 4",
-      "		movwf	Row",
-      "		movwf	PORTB",
-      "		call	KEY",
-      "		goto	again",
-      "",
-      "KEY	",
-      "		movlw 	0x06",
-      "		movwf	Col",
-      "		btfss	PORTB,0		;scan column 3",
-      "		call 	KEYPRESS",
-      "	",
-      "		movlw 	0x05",
-      "		movwf	Col",
-      "		btfss	PORTB,1		;scan column 2",
-      "		call 	KEYPRESS",
-      "",
-      "		movlw 	0x03",
-      "		movwf	Col",
-      "		btfss	PORTB,2		;scan column 1",
-      "		call	KEYPRESS",
-      "		return",
-      "",
-      "KEYPRESS	movf	Row,w",
-      "		andlw	0xf8",
-      "		iorwf	Col,w",
-      "		movwf	Keypr",
-      "		movf 	Keypr,w",
-      "		sublw	0xf3",
-      "		btfss	STATUS,Z",
-      "		goto 	two",
-      "		movlw	0x00",
-      "		movwf	PORTA",
-      "		return",
-      "two		movf 	Keypr,w",
-      "		sublw	0xf5",
-      "		btfss	STATUS,Z",
-      "		goto 	three",
-      "		movlw	0x01",
-      "		movwf	PORTA",
-      "		return",
-      "three		movf 	Keypr,w",
-      "		sublw	0xf6",
-      "		btfss	STATUS,Z",
-      "		goto 	four",
-      "		movlw	0x02",
-      "		movwf	PORTA",
-      "		return",
-      "four		movf 	Keypr,w",
-      "		sublw	0xeb",
-      "		btfss	STATUS,Z",
-      "		goto 	five",
-      "		movlw	0x04",
-      "		movwf	PORTA",
-      "		return",
-      "five		movf 	Keypr,w",
-      "		sublw	0xed",
-      "		btfss	STATUS,Z",
-      "		goto 	six",
-      "		movlw	0x05",
-      "		movwf	PORTA",
-      "		return",
-      "six		movf 	Keypr,w",
-      "		sublw	0xee",
-      "		btfss	STATUS,Z",
-      "		goto 	seven",
-      "		movlw	0x06",
-      "		movwf	PORTA",
-      "		return",
-      "seven		movf 	Keypr,w",
-      "		sublw	0xdb",
-      "		btfss	STATUS,Z",
-      "		goto 	eight",
-      "		movlw	0x08",
-      "		movwf	PORTA",
-      "		return",
-      "eight		movf 	Keypr,w",
-      "		sublw	0xdd",
-      "		btfss	STATUS,Z",
-      "		goto 	nine",
-      "		movlw	0x09",
-      "		movwf	PORTA",
-      "		return",
-      "nine		movf 	Keypr,w",
-      "		sublw	0xde",
-      "		btfss	STATUS,Z",
-      "		goto	Asterisk",
-      "		movlw	0x0A",
-      "		movwf	PORTA",
-      "		return",
-      "Asterisk	movf 	Keypr,w",
-      "		sublw	0xbe",
-      "		btfss	STATUS,Z",
-      "		goto	zero",
-      "		movlw	0x0E",
-      "		movwf	PORTA",
-      "		return",
-      "zero		movf 	Keypr,w",
-      "		sublw	0xbd",
-      "		btfss	STATUS,Z",
-      "		goto	Pound",
-      "		movlw	0x0D",
-      "		movwf	PORTA",
-      "		return",
-      "Pound		movf 	Keypr,w",
-      "		sublw	0xbb",
-      "		btfss	STATUS,Z",
-      "		return",
-      "		movlw	0x0C",
-      "		movwf	PORTA",
-      "		return",
-      "",
-      "		end"
+    ";*************************************************************************************",
+    ";  Lab Assignment: TT Board 1",
+    ";  Program File Name: TT Circuit 1.asm",
+    ";",
+    ";   Software:",
+    ";   This program takes a key that is pressed on the keypad and",
+    ";   converts it to a 4 bit binary number RRCC Where RR is Row and CC is column",
+    ";",
+    ";*************************************************************************************",
+    "",
+    ";======================= Configuration Register Programming =====================",
+    ";This loading of the CONFIG register with the WDT turned off and the security",
+    ";inactive.",
+    "",
+    " __CONFIG 0x3FFA   ;0x3FFA hex = b'11 1111 1111 1010'",
+    "",
+    ";  Bits 13 - 4 Code Protect Bits, Bit 3 Power Up Timer, Bit 2 Watch Dog Timer,",
+    ";  Bits 1 and 0 are Oscillator Select Bits",
+    ";",
+    ";=========================================================================",
+    ";============================= Equates=====================================",
+    "",
+    "Keypr      equ 0x0c    ;First DRAM location used as short term storage",
+    "Col        equ 0x0d    ;Second DRAM location used as short term storage",
+    "Row        equ 0x0e    ;Third DRAM location used for short term storage",
+    ";=========================================================================",
+    ";  Information the assembler needs to create proper files and program output",
+    "",
+    "",
+    "   title\"TT Circuit 1\"   ;Title of lab printed on History File",
+    "   list p=16f84A       ;Directive telling Assembler which PIC to use",
+    "   #include <ETR261.h> ;Header file to make programming simpler",
+    "",
+    ";=========================================================================",
+    "",
+    "           org 00h     ;starting address for the program in PRAM",
+    "           goto Start  ;skip over the interrupt address",
+    "           org 04h     ;starting address for the start of code",
+    "           retfie      ;return from interrupt to take care of an false interrupt",
+    "",
+    ";=========================================================================",
+    "",
+    "Start      movlw   0xf0        ;setup PORTA",
+    "           tris    PORTA",
+    "",
+    "           movlw   0x87        ;setup PORTB",
+    "           tris    PORTB",
+    "           movlw   0x0F",
+    "           movwf   PORTA",
+    "again      movlw   0xf0        ;scan row 1",
+    "           movwf   Row",
+    "           movwf   PORTB",
+    "           call    KEY",
+    "",
+    "           movlw   0xe8        ;scan row 2",
+    "           movwf   Row",
+    "           movwf   PORTB",
+    "           call    KEY",
+    "",
+    "           movlw   0xd8        ;scan row 3",
+    "           movwf   Row",
+    "           movwf   PORTB",
+    "           call    KEY",
+    "",
+    "           movlw   0xb8        ;scan row 4",
+    "           movwf   Row",
+    "           movwf   PORTB",
+    "           call    KEY",
+    "           goto    again",
+    "",
+    "KEY",
+    "           movlw   0x06",
+    "           movwf   Col",
+    "           btfss   PORTB,0     ;scan column 3",
+    "           call    KEYPRESS",
+    "",
+    "           movlw   0x05",
+    "           movwf   Col",
+    "           btfss   PORTB,1     ;scan column 2",
+    "           call    KEYPRESS",
+    "",
+    "           movlw   0x03",
+    "           movwf   Col",
+    "           btfss   PORTB,2     ;scan column 1",
+    "           call    KEYPRESS",
+    "           return",
+    "",
+    "KEYPRESS   movf    Row,w",
+    "           andlw   0xf8",
+    "           iorwf   Col,w",
+    "           movwf   Keypr",
+    "           movf    Keypr,w",
+    "           sublw   0xf3",
+    "           btfss   STATUS,Z",
+    "           goto    two",
+    "           movlw   0x00",
+    "           movwf   PORTA",
+    "           return",
+    "two        movf    Keypr,w",
+    "           sublw   0xf5",
+    "           btfss   STATUS,Z",
+    "           goto    three",
+    "           movlw   0x01",
+    "           movwf   PORTA",
+    "           return",
+    "three      movf    Keypr,w",
+    "           sublw   0xf6",
+    "           btfss   STATUS,Z",
+    "           goto    four",
+    "           movlw   0x02",
+    "           movwf   PORTA",
+    "           return",
+    "four       movf    Keypr,w",
+    "           sublw   0xeb",
+    "           btfss   STATUS,Z",
+    "           goto    five",
+    "           movlw   0x04",
+    "           movwf   PORTA",
+    "           return",
+    "five       movf    Keypr,w",
+    "           sublw   0xed",
+    "           btfss   STATUS,Z",
+    "           goto    six",
+    "           movlw   0x05",
+    "           movwf   PORTA",
+    "           return",
+    "six        movf    Keypr,w",
+    "           sublw   0xee",
+    "           btfss   STATUS,Z",
+    "           goto    seven",
+    "           movlw   0x06",
+    "           movwf   PORTA",
+    "           return",
+    "seven      movf    Keypr,w",
+    "           sublw   0xdb",
+    "           btfss   STATUS,Z",
+    "           goto    eight",
+    "           movlw   0x08",
+    "           movwf   PORTA",
+    "           return",
+    "eight      movf    Keypr,w",
+    "           sublw   0xdd",
+    "           btfss   STATUS,Z",
+    "           goto    nine",
+    "           movlw   0x09",
+    "           movwf   PORTA",
+    "           return",
+    "nine       movf    Keypr,w",
+    "           sublw   0xde",
+    "           btfss   STATUS,Z",
+    "           goto    Asterisk",
+    "           movlw   0x0A",
+    "           movwf   PORTA",
+    "           return",
+    "Asterisk   movf    Keypr,w",
+    "           sublw   0xbe",
+    "           btfss   STATUS,Z",
+    "           goto    zero",
+    "           movlw   0x0C",
+    "           movwf   PORTA",
+    "           return",
+    "zero       movf    Keypr,w",
+    "           sublw   0xbd",
+    "           btfss   STATUS,Z",
+    "           goto    Pound",
+    "           movlw   0x0D",
+    "           movwf   PORTA",
+    "           return",
+    "Pound      movf    Keypr,w",
+    "           sublw   0xbb",
+    "           btfss   STATUS,Z",
+    "           return",
+    "           movlw   0x0E",
+    "           movwf   PORTA",
+    "           return",
+    "",
+    "           end"
     ].join('\n'),
   js: function (pic) {
     var checkRow;
-    
+
     checkRow = function (number) {
       return function () {
         var row = number << 2,
             input;
-            
+
         pic.setPortB([0xf0, 0xe8, 0xd8, 0xb8][number]);
         input = pic.getPortB();
-        
+
         if (input === 0x06) {
           pic.setPortA(row + 0x0);
         }
@@ -2008,7 +2123,7 @@ code.push({
         }
       };
     };
-    
+
     return {
       start: function () {
         pic.trisPortA(0xf0);
@@ -2022,178 +2137,176 @@ code.push({
 
 code.push({
   asm: [
-      ";*************************************************************************************",
-      ";	Lab Assignment: TT Board 2 ",
-      ";	Program File Name: TT Circuit 2.asm",
-      ";	Name:Al Koon  ",
-      ";	Date:9/30/15  ",
-      ";",
-      ";   Software:	",
-      ";   This program takes row and column information from circuit 1 and converts that  ",
-      ";   it to a BCD number representing the key pressed in circuit 1.",
-      ";",
-      ";*************************************************************************************",
-      "",
-      ";======================= Configuration Register Programming =====================",
-      ";This loading of the CONFIG register with the WDT turned off and the security",
-      ";inactive.",
-      "",
-      " __CONFIG 0x3FFA	;0x3FFA hex = b'11 1111 1111 1010'",
-      "",
-      ";  Bits 13 - 4 Code Protect Bits, Bit 3 Power Up Timer, Bit 2 Watch Dog Timer,",
-      ";  Bits 1 and 0 are Oscillator Select Bits",
-      ";",
-      ";=========================================================================",
-      ";============================= Equates=====================================",
-      "",
-      "Keypr	equ	0x0c	;First DRAM location used as short term storage",
-      "",
-      ";=========================================================================",
-      ";  Information the assembler needs to create proper files and program output",
-      "",
-      "",
-      "	title\"TT Circuit 2\" 		;Title of lab printed on History File",
-      "	list p=16f84A			;Directive telling Assembler which PIC to use",
-      "	#include <ETR261.h>		;Header file to make programming simpler",
-      "",
-      ";=========================================================================",
-      "",
-      "		org 00h		;starting address for the program in PRAM",
-      "		goto Start	;skip over the interrupt address",
-      "		org 04h		;starting address for the start of code",
-      "		retfie		;return from interrupt to take care of an false interrupt",
-      "",
-      ";=========================================================================",
-      "",
-      "Start		movlw	0xf0		;setup PORTA bit0 -bit 4 outputs ",
-      "		tris	PORTA",
-      "		",
-      "		movlw 	0xff		;setup PORTB all inputs",
-      "		tris	PORTB",
-      "		movlw	0x0F",
-      "		movwf	PORTA",
-      "",
-      "again	movf 	PORTB,W",
-      "		movwf	Keypr",
-      "		call 	KEYPRESS",
-      "		goto 	again",
-      "",
-      "KEYPRESS	",
-      "		movf 	Keypr,w",
-      "		sublw	0x00",
-      "		btfss	STATUS,Z",
-      "		goto 	two",
-      "		movlw	0x01",
-      "		movwf	PORTA",
-      "		return",
-      "two		movf 	Keypr,w",
-      "		sublw	0x01",
-      "		btfss	STATUS,Z",
-      "		goto 	three",
-      "		movlw	0x02",
-      "		movwf	PORTA",
-      "		return",
-      "three		movf 	Keypr,w",
-      "		sublw	0x02",
-      "		btfss	STATUS,Z",
-      "		goto 	four",
-      "		movlw	0x03",
-      "		movwf	PORTA",
-      "		return",
-      "four		movf 	Keypr,w",
-      "		sublw	0x04",
-      "		btfss	STATUS,Z",
-      "		goto 	five",
-      "		movlw	0x04",
-      "		movwf	PORTA",
-      "		return",
-      "five		movf 	Keypr,w",
-      "		sublw	0x05",
-      "		btfss	STATUS,Z",
-      "		goto 	six",
-      "		movlw	0x05",
-      "		movwf	PORTA",
-      "		return",
-      "six		movf 	Keypr,w",
-      "		sublw	0x06",
-      "		btfss	STATUS,Z",
-      "		goto 	seven",
-      "		movlw	0x06",
-      "		movwf	PORTA",
-      "		return",
-      "seven		movf 	Keypr,w",
-      "		sublw	0x08",
-      "		btfss	STATUS,Z",
-      "		goto 	eight",
-      "		movlw	0x07",
-      "		movwf	PORTA",
-      "		return",
-      "eight		movf 	Keypr,w",
-      "		sublw	0x09",
-      "		btfss	STATUS,Z",
-      "		goto 	nine",
-      "		movlw	0x08",
-      "		movwf	PORTA",
-      "		return",
-      "nine		movf 	Keypr,w",
-      "		sublw	0x0A",
-      "		btfss	STATUS,Z",
-      "		goto	Asterisk",
-      "		movlw	0x09",
-      "		movwf	PORTA",
-      "		return",
-      "Asterisk	movf 	Keypr,w",
-      "		sublw	0x0E",
-      "		btfss	STATUS,Z",
-      "		goto	zero",
-      "		movlw	0x0A",
-      "		movwf	PORTA",
-      "		return",
-      "zero		movf 	Keypr,w",
-      "		sublw	0x0F",
-      "		btfss	STATUS,Z",
-      "		goto	Blank",
-      "		movlw	0x0F",
-      "		movwf	PORTA",
-      "		return",
-      "Blank		movf 	Keypr,w",
-      "		sublw	0x0D",
-      "		btfss	STATUS,Z",
-      "		goto	Pound",
-      "		movlw	0x00",
-      "		movwf	PORTA",
-      "		return",
-      "Pound		movf 	Keypr,w",
-      "		sublw	0x0C",
-      "		btfss	STATUS,Z",
-      "		return",
-      "		movlw	0x0F",
-      "		movwf	PORTA",
-      "		return",
-      "",
-      "",
-      "		end"
+    ";*************************************************************************************",
+    ";  Lab Assignment: TT Board 2 ",
+    ";  Program File Name: TT Circuit 2.asm",
+    ";",
+    ";   Software:  ",
+    ";   This program takes row and column information from circuit 1 and converts that  ",
+    ";   it to a BCD number representing the key pressed in circuit 1.",
+    ";",
+    ";*************************************************************************************",
+    "",
+    ";======================= Configuration Register Programming =====================",
+    ";This loading of the CONFIG register with the WDT turned off and the security",
+    ";inactive.",
+    "",
+    " __CONFIG 0x3FFA   ;0x3FFA hex = b'11 1111 1111 1010'",
+    "",
+    ";  Bits 13 - 4 Code Protect Bits, Bit 3 Power Up Timer, Bit 2 Watch Dog Timer,",
+    ";  Bits 1 and 0 are Oscillator Select Bits",
+    ";",
+    ";=========================================================================",
+    ";============================= Equates=====================================",
+    "",
+    "Keypr      equ 0x0c    ;First DRAM location used as short term storage",
+    "",
+    ";=========================================================================",
+    ";  Information the assembler needs to create proper files and program output",
+    "",
+    "",
+    "   title\"TT Circuit 2\"       ;Title of lab printed on History File",
+    "   list p=16f84A           ;Directive telling Assembler which PIC to use",
+    "   #include <ETR261.h>     ;Header file to make programming simpler",
+    "",
+    ";=========================================================================",
+    "",
+    "           org 00h     ;starting address for the program in PRAM",
+    "           goto Start  ;skip over the interrupt address",
+    "           org 04h     ;starting address for the start of code",
+    "           retfie      ;return from interrupt to take care of an false interrupt",
+    "",
+    ";=========================================================================",
+    "",
+    "Start      movlw   0xf0        ;setup PORTA bit0 -bit 4 outputs ",
+    "           tris    PORTA",
+    "           ",
+    "           movlw   0xff        ;setup PORTB all inputs",
+    "           tris    PORTB",
+    "           movlw   0x0F",
+    "           movwf   PORTA",
+    "",
+    "again      movf    PORTB,W",
+    "           movwf   Keypr",
+    "           call    KEYPRESS",
+    "           goto    again",
+    "",
+    "KEYPRESS   ",
+    "           movf    Keypr,w",
+    "           sublw   0x00",
+    "           btfss   STATUS,Z",
+    "           goto    two",
+    "           movlw   0x01",
+    "           movwf   PORTA",
+    "           return",
+    "two        movf    Keypr,w",
+    "           sublw   0x01",
+    "           btfss   STATUS,Z",
+    "           goto    three",
+    "           movlw   0x02",
+    "           movwf   PORTA",
+    "           return",
+    "three      movf    Keypr,w",
+    "           sublw   0x02",
+    "           btfss   STATUS,Z",
+    "           goto    four",
+    "           movlw   0x03",
+    "           movwf   PORTA",
+    "           return",
+    "four       movf    Keypr,w",
+    "           sublw   0x04",
+    "           btfss   STATUS,Z",
+    "           goto    five",
+    "           movlw   0x04",
+    "           movwf   PORTA",
+    "           return",
+    "five       movf    Keypr,w",
+    "           sublw   0x05",
+    "           btfss   STATUS,Z",
+    "           goto    six",
+    "           movlw   0x05",
+    "           movwf   PORTA",
+    "           return",
+    "six        movf    Keypr,w",
+    "           sublw   0x06",
+    "           btfss   STATUS,Z",
+    "           goto    seven",
+    "           movlw   0x06",
+    "           movwf   PORTA",
+    "           return",
+    "seven      movf    Keypr,w",
+    "           sublw   0x08",
+    "           btfss   STATUS,Z",
+    "           goto    eight",
+    "           movlw   0x07",
+    "           movwf   PORTA",
+    "           return",
+    "eight      movf    Keypr,w",
+    "           sublw   0x09",
+    "           btfss   STATUS,Z",
+    "           goto    nine",
+    "           movlw   0x08",
+    "           movwf   PORTA",
+    "           return",
+    "nine       movf    Keypr,w",
+    "           sublw   0x0A",
+    "           btfss   STATUS,Z",
+    "           goto    Asterisk",
+    "           movlw   0x09",
+    "           movwf   PORTA",
+    "           return",
+    "Asterisk   movf    Keypr,w",
+    "           sublw   0x0C",
+    "           btfss   STATUS,Z",
+    "           goto    zero",
+    "           movlw   0x0A",
+    "           movwf   PORTA",
+    "           return",
+    "zero       movf    Keypr,w",
+    "           sublw   0x0E",
+    "           btfss   STATUS,Z",
+    "           goto    Blank",
+    "           movlw   0x0D",
+    "           movwf   PORTA",
+    "           return",
+    "Blank      movf    Keypr,w",
+    "           sublw   0x0E",
+    "           btfss   STATUS,Z",
+    "           goto    Pound",
+    "           movlw   0x00",
+    "           movwf   PORTA",
+    "           return",
+    "Pound      movf    Keypr,w",
+    "           sublw   0x0C",
+    "           btfss   STATUS,Z",
+    "           return",
+    "           movlw   0x0F",
+    "           movwf   PORTA",
+    "           return",
+    "",
+    "",
+    "           end"
     ].join('\n'),
   js: function (pic) {
     var inputMap, mapRowColToBCD;
-    
+
     inputMap = {
-      0: 1, 
-      1: 2, 
-      2: 3, 
-      3: 0x0f, 
-      4: 4, 
-      5: 5, 
-      6: 6, 
-      7: 0x0f, 
-      8: 7, 
-      9: 8, 
-      10: 9, 
-      11: 0x0f, 
-      12: 0xa, 
-      13: 0, 
-      14: 0x0f, 
-      15: 0x0f 
+      0: 1,
+      1: 2,
+      2: 3,
+      3: 0x0f,
+      4: 4,
+      5: 5,
+      6: 6,
+      7: 0x0f,
+      8: 7,
+      9: 8,
+      10: 9,
+      11: 0x0f,
+      12: 0xa,
+      13: 0,
+      14: 0x0f,
+      15: 0x0f
     };
 
     mapRowColToBCD = function () {
@@ -2214,12 +2327,10 @@ code.push({
 code.push({
   asm: [
       ";*************************************************************************************",
-      ";	Lab Assignment: TT Board 3 ",
-      ";	Program File Name: TT Circuit 3",
-      ";	Name:  Al Koon  ",
-      ";	Date:  9/30/15",
+      ";    Lab Assignment: TT Board 3 ",
+      ";    Program File Name: TT Circuit 3",
       ";",
-      ";   Software:	",
+      ";   Software:    ",
       ";   This program converts BCD to 7 segment information for a CA display",
       ";   ",
       ";",
@@ -2229,7 +2340,7 @@ code.push({
       ";This loading of the CONFIG register with the WDT turned off and the security",
       ";inactive.",
       "",
-      " __CONFIG 0x3FFA	;0x3FFA hex = b'11 1111 1111 1010'",
+      " __CONFIG 0x3FFA ;0x3FFA hex = b'11 1111 1111 1010'",
       "",
       ";  Bits 13 - 4 Code Protect Bits, Bit 3 Power Up Timer, Bit 2 Watch Dog Timer,",
       ";  Bits 1 and 0 are Oscillator Select Bits",
@@ -2242,83 +2353,83 @@ code.push({
       ";  Information the assembler needs to create proper files and program output",
       "",
       "",
-      "	title\"TT Circuit 3\" 		;Title of lab printed on History File",
-      "	list p=16f84A			;Directive telling Assembler which PIC to use",
-      "	#include <ETR261.h>		;Header file to make programming simpler",
+      " title\"TT Circuit 3\"       ;Title of lab printed on History File",
+      " list p=16f84A           ;Directive telling Assembler which PIC to use",
+      " #include <ETR261.h>     ;Header file to make programming simpler",
       "",
       ";=========================================================================",
       "",
-      "			org 00h		;starting address for the program in PRAM",
-      "			goto Start	;skip over the interrupt address",
-      "			org 04h		;starting address for the start of code",
-      "			retfie		;return from interrupt to take care of an false interrupt",
+      "         org 00h     ;starting address for the program in PRAM",
+      "         goto Start  ;skip over the interrupt address",
+      "         org 04h     ;starting address for the start of code",
+      "         retfie      ;return from interrupt to take care of an false interrupt",
       "",
       ";=========================================================================",
       "",
-      "Start			                	",
+      "Start                                ",
       "",
       ";============================= Configure Port B ==============================",
-      "Start		movlw	0x80		;all bits as outputs but bit7",
-      "		tris	PORTB",
-      "		",
-      "		movlw 	0xff		;setup PORTB all inputs",
-      "		tris	PORTA",
+      "Start        movlw   0x80        ;all bits as outputs but bit7",
+      "     tris    PORTB",
+      "     ",
+      "     movlw   0xff        ;setup PORTB all inputs",
+      "     tris    PORTA",
       ";=========================================================================",
       "",
-      "Main		movf 	PORTA,W",
-      "		call 	table",
-      "		movwf	PORTB",
-      "		goto 	Main",
-      "		                        ",
+      "Main     movf    PORTA,W",
+      "     call    table",
+      "     movwf   PORTB",
+      "     goto    Main",
+      "                             ",
       "",
       "",
-      "table		addwf	PCL",
-      "		retlw	0xc0	;0",
-      "		retlw	0xf9	;1",
-      "		retlw	0xa4	;2",
-      "		retlw	0xb0	;3",
-      "		retlw	0x99	;4",
-      "		retlw	0x92	;5",
-      "		retlw	0x83	;6",
-      "		retlw	0xf8	;7",
-      "		retlw	0x80	;8",
-      "		retlw	0x98	;9",
-      "		retlw	0xbf	;blank",
-      "		retlw	0xff	;blank",
-      "		retlw	0xff	;blank",
-      "		retlw	0xff	;blank",
-      "		retlw	0xff	;blank",
-      "		retlw	0xff	;blank",
-      "		",
-      "		end",
+      "table        addwf   PCL",
+      "     retlw   0xc0    ;0",
+      "     retlw   0xf9    ;1",
+      "     retlw   0xa4    ;2",
+      "     retlw   0xb0    ;3",
+      "     retlw   0x99    ;4",
+      "     retlw   0x92    ;5",
+      "     retlw   0x83    ;6",
+      "     retlw   0xf8    ;7",
+      "     retlw   0x80    ;8",
+      "     retlw   0x98    ;9",
+      "     retlw   0xbf    ;blank",
+      "     retlw   0xff    ;blank",
+      "     retlw   0xff    ;blank",
+      "     retlw   0xff    ;blank",
+      "     retlw   0xff    ;blank",
+      "     retlw   0xff    ;blank",
+      "     ",
+      "     end",
       ""
     ].join('\n'),
   js: function (pic) {
     var inputMap, mapBCDTo7SegmentDisplay;
-    
+
     inputMap = {
-      0: 0xc0, 
-      1: 0xf9, 
-      2: 0xa4, 
-      3: 0xb0, 
-      4: 0x99, 
-      5: 0x92, 
-      6: 0x83, 
-      7: 0xf8, 
-      8: 0x80, 
-      9: 0x98, 
-      10: 0xbf, 
-      11: 0xff, 
-      12: 0xff, 
-      13: 0xff, 
-      14: 0xff, 
-      15: 0xff 
+      0: 0xc0,
+      1: 0xf9,
+      2: 0xa4,
+      3: 0xb0,
+      4: 0x99,
+      5: 0x92,
+      6: 0x83,
+      7: 0xf8,
+      8: 0x80,
+      9: 0x98,
+      10: 0xbf,
+      11: 0xff,
+      12: 0xff,
+      13: 0xff,
+      14: 0xff,
+      15: 0xff
     };
 
     mapBCDTo7SegmentDisplay = function () {
       pic.setPortB(inputMap[pic.getPortA()]);
     };
-    
+
     return {
       start: function () {
         pic.trisPortA(0xff);
