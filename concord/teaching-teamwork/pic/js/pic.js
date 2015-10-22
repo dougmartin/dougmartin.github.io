@@ -1339,7 +1339,7 @@ ProbeView = createComponent({
           // show for 3 renders (300ms) and then hide for 3 renders (300ms)
           this.props.probeSource.pulseProbeDuration++;
           if (this.props.probeSource.pulseProbeDuration > 3) {
-            amberFill = 0;
+            amberFill = defaultFill;
           }
           if (this.props.probeSource.pulseProbeDuration > 6) {
             this.props.probeSource.pulseProbeDuration = 0;
