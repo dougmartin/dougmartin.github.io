@@ -1691,18 +1691,20 @@ FakeSidebarView = createComponent({
   },
 
   handleSubmit: function(e) {
-    var input = this.refs.text.getDOMNode();
+    var input = this.refs.text.getDOMNode(),
+        text = $.trim(input.value);
+
     e.preventDefault();
 
-    this.state.items.push({
-      user: 'Student 1',
-      message: input.value
-    });
-
-    input.value = '';
-    input.focus();
-
-    this.setState({items: this.state.items});
+    if (text.length > 0) {
+      this.state.items.push({
+        user: 'Student 1',
+        message: text
+      });
+      this.setState({items: this.state.items});
+      input.value = '';
+      input.focus();
+    }
   },
 
   listenForEnter: function (e) {
